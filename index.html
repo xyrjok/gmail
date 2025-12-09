@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gmail 管理系统</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="assets/all.min.css" rel="stylesheet">
+    <link href="assets/all.min.css" rel="stylesheet"> <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
             --sidebar-width: 250px;
@@ -13,7 +13,7 @@
         }
         body { font-size: 0.9rem; background-color: #f8f9fa; overflow-x: hidden; }
         
-        /* 2. 浅灰色提示内容 */
+        /* 提示内容样式 */
         ::placeholder { color: #cccccc !important; opacity: 1; }
         .text-muted { color: #cccccc !important; }
         .form-text { color: #cccccc !important; }
@@ -75,8 +75,11 @@
             display: inline-block;
             vertical-align: middle;
         }
+        
+        .cursor-pointer { cursor: pointer; }
+        .cursor-pointer:hover { color: var(--primary-blue); }
 
-        /* 5. 鼠标跟随 Toast 样式 */
+        /* 鼠标跟随 Toast 样式 */
         #mouse-toast {
             position: absolute;
             background: rgba(0,0,0,0.8);
@@ -161,8 +164,10 @@
                             <div class="card-header bg-white" id="task-card-title">创建任务 / 立即发送</div>
                             <div class="card-body">
                                 <input type="hidden" id="edit-task-id">
+                                
                                 <label class="form-label text-muted small">发件邮箱</label>
-                                <select class="form-select mb-2" id="send-account-select"></select>
+                                <input class="form-control mb-2" list="account-list-options" id="send-account-input" placeholder="输入名称搜索或点击选择...">
+                                <datalist id="account-list-options"></datalist>
                                 
                                 <label class="form-label text-muted small">收件人 (多个用逗号分隔)</label>
                                 <input type="text" class="form-control mb-2" id="send-to" placeholder="user@example.com">
@@ -232,8 +237,7 @@
                                     <thead>
                                         <tr>
                                             <th><input type="checkbox" id="check-all-task" onchange="toggleAll('task')"></th>
-                                            <th>ID</th>
-                                            <th>邮箱ID</th>
+                                            <th>发件邮箱</th>
                                             <th>主题</th>
                                             <th>下次运行</th>
                                             <th>循环</th>
@@ -320,7 +324,7 @@
         let cachedTasks = [];
         let lastMouseX = 0, lastMouseY = 0;
 
-        // 5. 追踪鼠标位置，用于 Toast
+        // 鼠标位置追踪
         document.addEventListener('mousemove', (e) => {
             lastMouseX = e.pageX;
             lastMouseY = e.pageY;
@@ -330,7 +334,7 @@
             lastMouseY = e.pageY;
         });
 
-        // 5. 自定义 Toast 提示函数
+        // Toast 提示函数
         function showToast(msg) {
             const el = document.getElementById('mouse-toast');
             el.innerText = msg;
@@ -338,7 +342,6 @@
             el.style.top = lastMouseY + 10 + 'px';
             el.style.display = 'block';
             
-            // 强制重绘实现淡入
             requestAnimationFrame(() => {
                 el.style.opacity = 1;
             });
@@ -348,8 +351,47 @@
                 setTimeout(() => el.style.display = 'none', 300);
             }, 2000);
         }
+        
+        // --- 新增: 复制文本功能 ---
+        function copyText(text) {
+            if (!text || text === 'null' || text === '-') return;
+            navigator.clipboard.writeText(text)
+                .then(() => showToast("已复制！"))
+                .catch(() => showToast("复制失败"));
+        }
 
-        // 1. 登录回车监听
+        // --- 新增: 切换任务循环状态 ---
+        function toggleTaskLoop(id, isLoop) {
+            const task = cachedTasks.find(t => t.id === id);
+            if (!task) return;
+            const data = { ...task, is_loop: isLoop };
+            fetch(API_BASE + '/api/tasks', { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) })
+                .then(r => r.json()).then(res => {
+                    if(res.ok) { showToast("循环状态已更新"); task.is_loop = isLoop; }
+                    else { showToast("更新失败: " + res.error); loadTasks(); }
+                });
+        }
+        
+        // --- 新增: 切换账户启用状态 ---
+        function toggleAccountStatus(id, isActive) {
+            const acc = cachedAccounts.find(a => a.id === id);
+            if (!acc) return;
+            const data = { ...acc, status: isActive };
+            fetch(API_BASE + '/api/accounts', { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) })
+                .then(r => r.json()).then(res => {
+                    if(res.ok) { showToast(isActive ? "邮箱已启用" : "邮箱已禁用"); acc.status = isActive ? 1 : 0; }
+                    else { showToast("更新失败"); loadAccounts(); }
+                });
+        }
+        
+        // --- 新增: 从输入框获取 Account ID ---
+        function getSelectedAccountId() {
+            const name = $("#send-account-input").val();
+            const acc = cachedAccounts.find(a => a.name === name);
+            return acc ? acc.id : null;
+        }
+
+        // 登录回车监听
         $("#admin-pass").on('keypress', function (e) {
             if (e.which === 13) doLogin();
         });
@@ -389,38 +431,49 @@
             $(".list-group-item").removeClass("active");
             $(event.currentTarget).addClass("active");
             
-            if(id === 'section-accounts' || id === 'section-send') loadAccounts();
-            if(id === 'section-send') loadTasks();
+            // 优化加载顺序: 确保先加载账户，再加载任务(以便显示名称)
+            if(id === 'section-accounts') loadAccounts();
+            if(id === 'section-send') {
+                loadAccounts().then(() => loadTasks());
+            }
             if(id === 'section-receive') loadInboxAccounts();
         }
 
         // --- 账户管理 ---
         function loadAccounts() {
-            fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
+            return fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
                 .then(r => r.json())
                 .then(data => {
                     cachedAccounts = data;
                     let html = '';
-                    let selectHtml = '<option value="">-- 选择邮箱 --</option>';
+                    let optionsHtml = ''; 
+                    
                     data.forEach(acc => {
+                        // 状态开关
+                        const statusSwitch = `
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
+                        </div>`;
+                        
                         html += `<tr>
                             <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
-                            <td>${acc.name}</td>
-                            <td>${acc.alias}</td>
-                            <td><span class="text-truncate-cell" title="${acc.script_url}">${acc.script_url || '-'}</span></td>
+                            <td class="cursor-pointer" onclick="copyText('${acc.name}')" title="点击复制">${acc.name}</td>
+                            <td class="cursor-pointer" onclick="copyText('${acc.alias}')" title="点击复制">${acc.alias || '-'}</td>
+                            <td class="cursor-pointer" onclick="copyText('${acc.script_url}')" title="点击复制"><span class="text-truncate-cell">${acc.script_url || '-'}</span></td>
                             <td><span class="badge bg-secondary">${acc.type}</span></td>
-                            <td><span class="badge ${acc.status?'bg-success':'bg-secondary'}">${acc.status?'启用':'禁用'}</span></td>
+                            <td>${statusSwitch}</td>
                             <td>
                                 <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditModal(${acc.id})"><i class="fas fa-edit"></i></button> 
                                 <button class="btn btn-sm btn-light text-danger py-0" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button>
                             </td>
                         </tr>`;
-                        selectHtml += `<option value="${acc.id}">${acc.name}</option>`;
+                        
+                        // Datalist 选项
+                        optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
                     });
+                    
                     $("#account-list-body").html(html);
-                    if($("#send-account-select").children().length <= 1) { 
-                        $("#send-account-select").html(selectHtml);
-                    }
+                    $("#account-list-options").html(optionsHtml);
                 });
         }
 
@@ -433,7 +486,6 @@
             }
         }
 
-        // 8. 批量导出账户
         function exportAccounts() {
              const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cachedAccounts, null, 2));
              const downloadAnchorNode = document.createElement('a');
@@ -444,7 +496,6 @@
              downloadAnchorNode.remove();
         }
 
-        // 8. 批量导入账户
         function importAccountsFile(input) {
             const file = input.files[0];
             if (!file) return;
@@ -465,7 +516,7 @@
                 }
             };
             reader.readAsText(file);
-            input.value = ''; // Reset
+            input.value = ''; 
         }
 
         // --- 任务管理 ---
@@ -477,8 +528,12 @@
 
         function saveTask() {
             const id = $("#edit-task-id").val();
+            const accId = getSelectedAccountId();
+            
+            if (!accId) { showToast("请填写正确的发件邮箱名称"); return; }
+
             const data = {
-                account_id: $("#send-account-select").val(),
+                account_id: accId,
                 to_email: $("#send-to").val(),
                 subject: $("#send-subject").val(),
                 content: $("#send-content").val(),
@@ -488,7 +543,6 @@
                 execution_mode: getExecutionMode()
             };
 
-            // 区分新建和编辑
             const method = id ? 'PUT' : 'POST';
             if(id) data.id = id;
 
@@ -497,7 +551,6 @@
                 headers: getHeaders(),
                 body: JSON.stringify(data)
             }).then(() => {
-                // 6. 移除确定框，使用 Toast
                 showToast(id ? "修改成功" : "添加成功");
                 cancelEditTask();
                 loadTasks();
@@ -505,15 +558,17 @@
         }
 
         function sendNow() {
+            const accId = getSelectedAccountId();
+            if(!accId) { showToast("请填写正确的发件邮箱名称"); return; }
+
             const data = {
-                account_id: $("#send-account-select").val(),
+                account_id: accId,
                 to_email: $("#send-to").val(),
                 subject: $("#send-subject").val(),
                 content: $("#send-content").val(),
                 immediate: true,
                 execution_mode: getExecutionMode()
             };
-            if(!data.account_id) { showToast("请先选择发件邮箱"); return; }
             
             const btn = $(event.target).closest('button');
             const originalHtml = btn.html();
@@ -527,7 +582,7 @@
             .then(r => r.json())
             .then(res => {
                 btn.prop('disabled', false).html(originalHtml);
-                if(res.ok) showToast("发送成功"); // 6. 移除确定框
+                if(res.ok) showToast("发送成功");
                 else showToast("失败: " + (res.error || '未知'));
             })
             .catch(() => {
@@ -544,16 +599,23 @@
                     let html = '';
                     data.forEach(task => {
                         let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
-                        let loopIcon = task.is_loop ? '<i class="fas fa-sync text-success"></i>' : '-';
                         
-                        // 7. 增加复选框，编辑和删除按钮
+                        // 邮箱名匹配
+                        const acc = cachedAccounts.find(a => a.id == task.account_id);
+                        const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
+
+                        // 循环开关
+                        const loopSwitch = `
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" ${task.is_loop ? 'checked' : ''} onchange="toggleTaskLoop(${task.id}, this.checked)">
+                        </div>`;
+                        
                         html += `<tr>
                             <td><input type="checkbox" class="task-check" value="${task.id}"></td>
-                            <td>${task.id}</td>
-                            <td>${task.account_id}</td>
+                            <td>${accName}</td>
                             <td><span class="text-truncate-cell" title="${task.subject||''}">${task.subject || '-'}</span></td>
                             <td>${new Date(task.next_run_at).toLocaleString()}</td>
-                            <td>${loopIcon}</td>
+                            <td>${loopSwitch}</td>
                             <td class="${statusColor}">${task.status}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline-primary py-0" title="执行" onclick="manualRun(${task.id})"><i class="fas fa-play"></i></button>
@@ -566,13 +628,16 @@
                 });
         }
 
-        // 7. 任务编辑逻辑
         function editTask(id) {
             const task = cachedTasks.find(t => t.id === id);
             if(!task) return;
             
             $("#edit-task-id").val(task.id);
-            $("#send-account-select").val(task.account_id);
+            
+            // Input 回显
+            const acc = cachedAccounts.find(a => a.id == task.account_id);
+            $("#send-account-input").val(acc ? acc.name : '');
+            
             $("#send-to").val(task.to_email);
             $("#send-subject").val(task.subject);
             $("#send-content").val(task.content);
@@ -580,7 +645,6 @@
             $("#range-b").val(task.delay_config);
             $("#loop-switch").prop("checked", !!task.is_loop);
             
-            // Mode
             let mode = task.execution_mode || 'AUTO';
             $(`input[name="pref-mode"][id="pref-${mode.toLowerCase()}"]`).prop("checked", true);
 
@@ -588,7 +652,6 @@
             $("#btn-save-task").html('<i class="fas fa-save"></i> 更新任务');
             $("#btn-cancel-edit").removeClass("d-none");
             
-            // 滚动到顶部
             document.querySelector('.content-section.active').scrollIntoView();
         }
 
@@ -597,7 +660,8 @@
             $("#task-card-title").text("创建任务 / 立即发送");
             $("#btn-save-task").html('<i class="fas fa-clock"></i> 添加任务');
             $("#btn-cancel-edit").addClass("d-none");
-            // 清空表单
+            
+            $("#send-account-input").val("");
             $("#send-to").val("");
             $("#send-subject").val("");
             $("#send-content").val("");
@@ -654,7 +718,6 @@
             }
         }
 
-        // 通用全选
         function toggleAll(type) {
             const checked = $("#check-all-" + type).is(":checked");
             $("." + type + "-check").prop("checked", checked);
@@ -709,6 +772,7 @@
 
         if(localStorage.getItem("auth_token")) {
             $("#login-overlay").hide();
+            // 初始加载只加载账户，显示页面时按需加载
             loadAccounts();
         }
     </script>
