@@ -7,67 +7,26 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/all.min.css" rel="stylesheet">
     <style>
-        :root {
-            --sidebar-width: 250px;
-            --primary-blue: #007bff;
-        }
+        /* 保留原有的 CSS */
+        :root { --sidebar-width: 250px; --primary-blue: #007bff; }
         body { font-size: 0.9rem; background-color: #f8f9fa; overflow-x: hidden; }
-        
-        /* 紧凑与聚焦样式 */
-        .form-control, .form-select {
-            font-size: 0.9rem;
-            padding: 0.4rem 0.6rem;
-        }
-        .form-control:focus, .form-select:focus {
-            border: 1px solid var(--primary-blue);
-            box-shadow: 0 0 8px rgba(0, 123, 255, 0.6);
-            outline: none;
-        }
-        h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.5px; }
-
-        /* 侧边栏布局 */
-        #sidebar-wrapper {
-            min-height: 100vh;
-            margin-left: -var(--sidebar-width);
-            transition: margin .25s ease-out;
-            background: #343a40;
-            color: #fff;
-            position: fixed;
-            width: var(--sidebar-width);
-            z-index: 1000;
-        }
-        #sidebar-wrapper .list-group-item {
-            background-color: transparent;
-            color: #ccc;
-            border: none;
-            padding: 1rem 1.5rem;
-        }
-        #sidebar-wrapper .list-group-item:hover, .list-group-item.active {
-            background-color: rgba(255,255,255,0.1);
-            color: #fff;
-        }
-        #page-content-wrapper {
-            width: 100%;
-            padding-left: var(--sidebar-width);
-        }
-        
-        /* 布局区块 */
+        .form-control, .form-select { font-size: 0.9rem; padding: 0.4rem 0.6rem; }
+        .form-control:focus, .form-select:focus { border: 1px solid var(--primary-blue); box-shadow: 0 0 8px rgba(0, 123, 255, 0.6); outline: none; }
+        #sidebar-wrapper { min-height: 100vh; margin-left: -var(--sidebar-width); transition: margin .25s ease-out; background: #343a40; color: #fff; position: fixed; width: var(--sidebar-width); z-index: 1000; }
+        #sidebar-wrapper .list-group-item { background-color: transparent; color: #ccc; border: none; padding: 1rem 1.5rem; }
+        #sidebar-wrapper .list-group-item:hover, .list-group-item.active { background-color: rgba(255,255,255,0.1); color: #fff; }
+        #page-content-wrapper { width: 100%; padding-left: var(--sidebar-width); }
         .content-section { display: none; padding: 20px; }
         .content-section.active { display: block; }
-        
-        /* 收件箱分栏 */
         .split-view { display: flex; height: calc(100vh - 60px); }
         .col-c { width: 300px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
         .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
         .email-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
         .email-item:hover { background-color: #f1f1f1; }
+        #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 9999; display: flex; align-items: center; justify-content: center; }
         
-        /* 登录遮罩 */
-        #login-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: white; z-index: 9999; display: flex;
-            align-items: center; justify-content: center;
-        }
+        /* 表格文字截断优化 */
+        .text-truncate-cell { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
     </style>
 </head>
 <body>
@@ -102,7 +61,7 @@
                 <div class="card shadow-sm">
                     <div class="card-body">
                         <div class="mb-3">
-                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal"><i class="fas fa-plus"></i> 添加邮箱</button>
+                            <button class="btn btn-sm btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> 添加邮箱</button>
                             <button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> 批量删除</button>
                         </div>
                         <table class="table table-hover table-sm">
@@ -111,13 +70,12 @@
                                     <th><input type="checkbox"></th>
                                     <th>名称</th>
                                     <th>别名</th>
-                                    <th>类型</th>
+                                    <th>Api/Script URL</th> <th>类型</th>
                                     <th>状态</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
-                            <tbody id="account-list-body">
-                                </tbody>
+                            <tbody id="account-list-body"></tbody>
                         </table>
                     </div>
                 </div>
@@ -128,7 +86,7 @@
                 <div class="row">
                     <div class="col-md-5">
                         <div class="card shadow-sm mb-3">
-                            <div class="card-header bg-white">创建新任务</div>
+                            <div class="card-header bg-white">创建任务 / 立即发送</div>
                             <div class="card-body">
                                 <label class="form-label">选择发件邮箱</label>
                                 <select class="form-select mb-2" id="send-account-select"></select>
@@ -140,7 +98,7 @@
                                 <textarea class="form-control mb-2" id="send-content" rows="3"></textarea>
                                 
                                 <hr>
-                                <label class="form-label fw-bold">定时与循环设置</label>
+                                <label class="form-label fw-bold">定时与循环设置 <small class="text-muted fw-normal">(立即发送时可忽略)</small></label>
                                 
                                 <div class="row g-2 mb-2">
                                     <div class="col-6">
@@ -148,18 +106,21 @@
                                         <input type="datetime-local" class="form-control" id="date-a">
                                     </div>
                                     <div class="col-6">
-                                        <label class="small text-muted">B框: 随机天数范围 (如: 10-20)</label>
+                                        <label class="small text-muted">B框: 随机天数范围</label>
                                         <input type="text" class="form-control" id="range-b" placeholder="10-20">
                                     </div>
                                 </div>
                                 
                                 <div class="form-check form-switch mb-3">
                                     <input class="form-check-input" type="checkbox" id="loop-switch">
-                                    <label class="form-check-label" for="loop-switch">启用循环开关 (完成后重新按B框规则排期)</label>
+                                    <label class="form-check-label" for="loop-switch">启用循环开关</label>
                                 </div>
                                 
-                                <button class="btn btn-primary w-100" onclick="addTask()"><i class="fas fa-clock"></i> 添加任务</button>
-                                <button class="btn btn-success w-100 mt-2" onclick="sendNow()"><i class="fas fa-paper-plane"></i> 立即发送</button>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-primary flex-fill" onclick="addTask()"><i class="fas fa-clock"></i> 添加任务</button>
+                                    <button class="btn btn-success flex-fill" onclick="sendNow()"><i class="fas fa-paper-plane"></i> 立即发送</button>
+                                </div>
+
                             </div>
                         </div>
                     </div>
@@ -176,33 +137,21 @@
                     </div>
                 </div>
             </div>
-
+            
             <div id="section-receive" class="content-section p-0">
                 <div class="split-view">
                     <div class="col-c">
                         <div class="p-3 border-bottom font-weight-bold">邮箱列表</div>
-                        <div id="inbox-account-list">
-                            <p class="text-muted small text-center mt-3">加载中...</p>
-                        </div>
+                        <div id="inbox-account-list"><p class="text-muted small text-center mt-3">加载中...</p></div>
                     </div>
                     <div class="col-d">
-                        <div class="d-flex justify-content-between mb-3">
-                            <h4>邮件内容</h4>
-                            <div>
-                                <button class="btn btn-sm btn-danger">删除</button>
-                            </div>
-                        </div>
-                        <div id="email-content-view">
-                            <p class="text-muted text-center mt-5">请在左侧选择邮箱查看邮件</p>
-                        </div>
+                        <div class="d-flex justify-content-between mb-3"><h4>邮件内容</h4></div>
+                        <div id="email-content-view"><p class="text-muted text-center mt-5">请在左侧选择邮箱查看邮件</p></div>
                     </div>
                 </div>
             </div>
 
-            <div id="section-system" class="content-section">
-                <h3>系统设置</h3>
-                <p>功能待定...</p>
-            </div>
+            <div id="section-system" class="content-section"><h3>系统设置</h3><p>功能待定...</p></div>
 
         </div>
     </div>
@@ -211,11 +160,11 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">添加邮箱</h5>
+                    <h5 class="modal-title" id="accModalTitle">添加邮箱</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名">
+                    <input type="hidden" id="acc-id"> <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名">
                     <input type="text" class="form-control mb-2" id="acc-alias" placeholder="别名">
                     <select class="form-select mb-2" id="acc-type">
                         <option value="GAS">Gmail App (GAS)</option>
@@ -228,7 +177,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" onclick="addAccount()">保存</button>
+                    <button type="button" class="btn btn-primary" onclick="saveAccount()">保存</button>
                 </div>
             </div>
         </div>
@@ -237,46 +186,32 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // 配置你的 Worker URL
         const API_BASE = "https://gm.xyrj.dpdns.org";
-        
-        // 认证逻辑
+        let cachedAccounts = []; // 缓存账户数据用于编辑回显
+
         function doLogin() {
             const u = $("#admin-user").val();
             const p = $("#admin-pass").val();
             const token = btoa(u + ":" + p);
             localStorage.setItem("auth_token", token);
-            
             fetch(API_BASE, { headers: { 'Authorization': 'Basic ' + token } })
                 .then(res => {
-                    if(res.ok) {
-                        $("#login-overlay").fadeOut();
-                        loadAccounts();
-                    } else {
-                        alert("账号或密码错误");
-                    }
-                }).catch(()=> alert("连接失败，请检查 Worker URL"));
+                    if(res.ok) { $("#login-overlay").fadeOut(); loadAccounts(); } 
+                    else { alert("账号或密码错误"); }
+                }).catch(()=> alert("连接失败"));
         }
 
         function getHeaders() {
-            return {
-                'Authorization': 'Basic ' + localStorage.getItem("auth_token"),
-                'Content-Type': 'application/json'
-            };
+            return { 'Authorization': 'Basic ' + localStorage.getItem("auth_token"), 'Content-Type': 'application/json' };
         }
 
-        function doLogout() {
-            localStorage.removeItem("auth_token");
-            location.reload();
-        }
+        function doLogout() { localStorage.removeItem("auth_token"); location.reload(); }
 
-        // 页面切换
         function showSection(id) {
             $(".content-section").removeClass("active");
             $("#" + id).addClass("active");
             $(".list-group-item").removeClass("active");
             $(event.currentTarget).addClass("active");
-            
             if(id === 'section-accounts' || id === 'section-send') loadAccounts();
             if(id === 'section-send') loadTasks();
             if(id === 'section-receive') loadInboxAccounts();
@@ -286,16 +221,22 @@
             fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
                 .then(r => r.json())
                 .then(data => {
+                    cachedAccounts = data; // 缓存数据
                     let html = '';
                     let selectHtml = '';
                     data.forEach(acc => {
+                        // 新增 URL 列显示，并增加 editAccount 调用
                         html += `<tr>
                             <td><input type="checkbox" value="${acc.id}"></td>
                             <td>${acc.name}</td>
                             <td>${acc.alias}</td>
+                            <td><span class="text-truncate-cell" title="${acc.script_url}">${acc.script_url || '-'}</span></td>
                             <td><span class="badge bg-secondary">${acc.type}</span></td>
                             <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${acc.status?'checked':''}></div></td>
-                            <td><button class="btn btn-sm btn-light text-primary"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button></td>
+                            <td>
+                                <button class="btn btn-sm btn-light text-primary" onclick="openEditModal(${acc.id})"><i class="fas fa-edit"></i></button> 
+                                <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button>
+                            </td>
                         </tr>`;
                         selectHtml += `<option value="${acc.id}">${acc.name}</option>`;
                     });
@@ -304,27 +245,36 @@
                 });
         }
 
-        function loadInboxAccounts() {
-            fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
-                .then(r => r.json())
-                .then(data => {
-                    let html = '';
-                    if(data.length === 0) {
-                         html = '<div class="p-3 text-center text-muted">暂无邮箱</div>';
-                    } else {
-                        data.forEach(acc => {
-                            html += `
-                            <div class="email-item" onclick="alert('账号ID: ${acc.id}')">
-                                ${acc.name} 
-                                <span class="badge bg-secondary rounded-pill float-end" style="font-size:0.7rem">${acc.type}</span>
-                            </div>`;
-                        });
-                    }
-                    $("#inbox-account-list").html(html);
-                });
+        // 打开新增弹窗
+        function openAddModal() {
+            $("#accModalTitle").text("添加邮箱");
+            $("#acc-id").val(""); // 清空ID
+            $("#acc-name").val("");
+            $("#acc-alias").val("");
+            $("#acc-script").val("");
+            $("#acc-type").val("GAS");
+            $("#acc-status").prop("checked", true);
+            new bootstrap.Modal(document.getElementById('addAccountModal')).show();
         }
 
-        function addAccount() {
+        // 打开编辑弹窗
+        function openEditModal(id) {
+            const acc = cachedAccounts.find(a => a.id === id);
+            if(!acc) return;
+            
+            $("#accModalTitle").text("编辑邮箱");
+            $("#acc-id").val(acc.id);
+            $("#acc-name").val(acc.name);
+            $("#acc-alias").val(acc.alias);
+            $("#acc-script").val(acc.script_url);
+            $("#acc-type").val(acc.type);
+            $("#acc-status").prop("checked", acc.status == 1); // 假设DB存的是1/0
+            new bootstrap.Modal(document.getElementById('addAccountModal')).show();
+        }
+
+        // 统一保存函数 (新增或编辑)
+        function saveAccount() {
+            const id = $("#acc-id").val();
             const data = {
                 name: $("#acc-name").val(),
                 alias: $("#acc-alias").val(),
@@ -332,8 +282,13 @@
                 script_url: $("#acc-script").val(),
                 status: $("#acc-status").is(":checked")
             };
+            
+            // 如果有ID则是更新(PUT)，否则是新增(POST)
+            const method = id ? 'PUT' : 'POST';
+            if(id) data.id = id;
+
             fetch(API_BASE + '/api/accounts', {
-                method: 'POST',
+                method: method,
                 headers: getHeaders(),
                 body: JSON.stringify(data)
             }).then(() => {
@@ -350,6 +305,21 @@
             }
         }
 
+        function loadInboxAccounts() {
+            if(!cachedAccounts.length) loadAccounts(); // 确保有数据
+            // ... (原逻辑) ...
+            // 简单实现
+             fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    let html = '';
+                    data.forEach(acc => {
+                         html += `<div class="email-item">${acc.name}</div>`;
+                    });
+                    $("#inbox-account-list").html(html || '暂无');
+                });
+        }
+
         function addTask() {
             const data = {
                 account_id: $("#send-account-select").val(),
@@ -363,10 +333,7 @@
                 method: 'POST',
                 headers: getHeaders(),
                 body: JSON.stringify(data)
-            }).then(() => {
-                alert("任务已添加");
-                loadTasks();
-            });
+            }).then(() => { alert("任务已添加"); loadTasks(); });
         }
 
         function sendNow() {
@@ -374,12 +341,13 @@
                 account_id: $("#send-account-select").val(),
                 to_email: $("#send-to").val(),
                 content: $("#send-content").val(),
-                immediate: true
+                immediate: true // 关键标志
             };
             if(!data.account_id) { alert("请先选择发件邮箱"); return; }
-            const btn = $(event.target);
-            const originalText = btn.html();
-            btn.prop('disabled', true).text('发送中...');
+            
+            const btn = $(event.target).closest('button'); // 兼容点击图标的情况
+            const originalHtml = btn.html();
+            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 发送中...');
             
             fetch(API_BASE + '/api/tasks', {
                 method: 'POST',
@@ -388,17 +356,16 @@
             })
             .then(r => r.json())
             .then(res => {
-                btn.prop('disabled', false).html(originalText);
+                btn.prop('disabled', false).html(originalHtml);
                 if(res.ok) alert("发送成功！");
                 else alert("发送失败: " + (res.error || '未知错误'));
             })
             .catch(() => {
-                btn.prop('disabled', false).html(originalText);
+                btn.prop('disabled', false).html(originalHtml);
                 alert("网络错误");
             });
         }
 
-        // 修改后的 loadTasks，支持手动执行按钮
         function loadTasks() {
             fetch(API_BASE + '/api/tasks', { headers: getHeaders() })
                 .then(r => r.json())
@@ -406,57 +373,20 @@
                     let html = '';
                     data.forEach(task => {
                         let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
-                        let loopIcon = task.is_loop ? '<i class="fas fa-sync text-success"></i>' : '-';
-                        
                         html += `<tr>
                             <td>${task.account_id}</td>
                             <td>${task.to_email}</td>
                             <td>${new Date(task.next_run_at).toLocaleString()}</td>
-                            <td>${loopIcon}</td>
-                            <td class="${statusColor} fw-bold">${task.status}</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-primary py-0" onclick="manualRun(${task.id})">
-                                    <i class="fas fa-play"></i> 执行
-                                </button>
-                            </td>
+                            <td>${task.is_loop ? '是' : '-'}</td>
+                            <td class="${statusColor}">${task.status}</td>
+                            <td>-</td>
                         </tr>`;
                     });
                     $("#task-list-body").html(html);
                 });
         }
-
-        // 新增：手动执行任务函数
-        function manualRun(id) {
-            if(!confirm("确定要立即手动执行此任务吗？")) return;
-            const btn = $(event.currentTarget);
-            const originalHtml = btn.html();
-            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
-
-            fetch(API_BASE + '/api/tasks', {
-                method: 'PUT',
-                headers: getHeaders(),
-                body: JSON.stringify({ id: id })
-            })
-            .then(r => r.json())
-            .then(res => {
-                if(res.ok) {
-                    alert("执行完成");
-                    loadTasks();
-                } else {
-                    alert("执行失败: " + (res.error || "未知错误"));
-                    btn.prop('disabled', false).html(originalHtml);
-                }
-            })
-            .catch(() => {
-                alert("网络请求失败");
-                btn.prop('disabled', false).html(originalHtml);
-            });
-        }
-
-        if(localStorage.getItem("auth_token")) {
-            $("#login-overlay").hide();
-            loadAccounts();
-        }
+        
+        if(localStorage.getItem("auth_token")) { $("#login-overlay").hide(); loadAccounts(); }
     </script>
 </body>
 </html>
