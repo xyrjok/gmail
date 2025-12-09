@@ -84,14 +84,14 @@
     <div class="d-flex" id="wrapper">
         <div id="sidebar-wrapper">
             <div class="sidebar-heading text-center py-4 fs-4 border-bottom border-secondary">
-                <i class="fad fa-mail-bulk"></i> Gmail Manager
+                <i class="far fa-mail-bulk"></i> Gmail Manager
             </div>
             <div class="list-group list-group-flush">
-                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="fad fa-users-cog me-2"></i> 邮箱管理</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="fad fa-paper-plane me-2"></i> 发件设置</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="fad fa-inbox-in me-2"></i> 收件设置</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-system')"><i class="fad fa-cogs me-2"></i> 系统设置</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="fad fa-sign-out me-2"></i> 退出登录</a>
+                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="far fa-users-cog me-2"></i> 邮箱管理</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="far fa-paper-plane me-2"></i> 发件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="far fa-inbox-in me-2"></i> 收件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-system')"><i class="far fa-cogs me-2"></i> 系统设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="far fa-sign-out me-2"></i> 退出登录</a>
             </div>
         </div>
 
@@ -102,8 +102,8 @@
                 <div class="card shadow-sm">
                     <div class="card-body">
                         <div class="mb-3">
-                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal"><i class="fad fa-plus"></i> 添加邮箱</button>
-                            <button class="btn btn-sm btn-danger"><i class="fad fa-trash"></i> 批量删除</button>
+                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal"><i class="far fa-plus"></i> 添加邮箱</button>
+                            <button class="btn btn-sm btn-danger"><i class="far fa-trash"></i> 批量删除</button>
                         </div>
                         <table class="table table-hover table-sm">
                             <thead>
@@ -158,8 +158,8 @@
                                     <label class="form-check-label" for="loop-switch">启用循环开关 (完成后重新按B框规则排期)</label>
                                 </div>
                                 
-                                <button class="btn btn-primary w-100" onclick="addTask()"><i class="fad fa-clock"></i> 添加任务</button>
-                                <button class="btn btn-success w-100 mt-2" onclick="sendNow()"><i class="fad fa-paper-plane"></i> 立即发送</button>
+                                <button class="btn btn-primary w-100" onclick="addTask()"><i class="far fa-clock"></i> 添加任务</button>
+                                <button class="btn btn-success w-100 mt-2" onclick="sendNow()"><i class="far fa-paper-plane"></i> 立即发送</button>
                             </div>
                         </div>
                     </div>
@@ -295,7 +295,7 @@
                             <td>${acc.alias}</td>
                             <td><span class="badge bg-secondary">${acc.type}</span></td>
                             <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${acc.status?'checked':''}></div></td>
-                            <td><button class="btn btn-sm btn-light text-primary"><i class="fad fa-edit"></i></button> <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="fad fa-trash"></i></button></td>
+                            <td><button class="btn btn-sm btn-light text-primary"><i class="far fa-edit"></i></button> <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="far fa-trash"></i></button></td>
                         </tr>`;
                         selectHtml += `<option value="${acc.id}">${acc.name}</option>`;
                     });
@@ -415,7 +415,7 @@
                             <td>${task.account_id}</td>
                             <td>${task.to_email}</td>
                             <td>${new Date(task.next_run_at).toLocaleString()}</td>
-                            <td>${task.is_loop ? '<i class="fad fa-sync text-success"></i>' : '-'}</td>
+                            <td>${task.is_loop ? '<i class="far fa-sync text-success"></i>' : '-'}</td>
                             <td>${task.status}</td>
                         </tr>`;
                     });
