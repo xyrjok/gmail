@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gmail 管理系统</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/assets/all.min.css" rel="stylesheet">
+    <link href="assets/all.min.css" rel="stylesheet">
     <style>
         :root {
             --sidebar-width: 250px;
@@ -159,6 +159,7 @@
                                 </div>
                                 
                                 <button class="btn btn-primary w-100" onclick="addTask()"><i class="fad fa-clock"></i> 添加任务</button>
+                                <button class="btn btn-success w-100 mt-2" onclick="sendNow()"><i class="fad fa-paper-plane"></i> 立即发送</button>
                             </div>
                         </div>
                     </div>
@@ -181,7 +182,7 @@
                     <div class="col-c">
                         <div class="p-3 border-bottom font-weight-bold">邮箱列表</div>
                         <div id="inbox-account-list">
-                            <div class="email-item">admin@example.com <span class="badge bg-primary rounded-pill float-end">2</span></div>
+                            <p class="text-muted small text-center mt-3">加载中...</p>
                         </div>
                     </div>
                     <div class="col-d">
@@ -274,6 +275,9 @@
             
             if(id === 'section-accounts' || id === 'section-send') loadAccounts();
             if(id === 'section-send') loadTasks();
+            
+            // 修改点 3: 切换到收件设置时，加载邮箱列表
+            if(id === 'section-receive') loadInboxAccounts();
         }
 
         // --- 核心功能 API 调用 ---
@@ -297,6 +301,27 @@
                     });
                     $("#account-list-body").html(html);
                     $("#send-account-select").html(selectHtml);
+                });
+        }
+
+        // 修改点 4: 新增收件页面邮箱加载函数
+        function loadInboxAccounts() {
+            fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    let html = '';
+                    if(data.length === 0) {
+                         html = '<div class="p-3 text-center text-muted">暂无邮箱</div>';
+                    } else {
+                        data.forEach(acc => {
+                            html += `
+                            <div class="email-item" onclick="alert('加载账号 ID: ${acc.id} 的邮件逻辑待开发')">
+                                ${acc.name} 
+                                <span class="badge bg-secondary rounded-pill float-end" style="font-size:0.7rem">${acc.type}</span>
+                            </div>`;
+                        });
+                    }
+                    $("#inbox-account-list").html(html);
                 });
         }
 
@@ -342,6 +367,41 @@
             }).then(() => {
                 alert("任务已添加");
                 loadTasks();
+            });
+        }
+
+        // 修改点 5: 新增立即发送函数
+        function sendNow() {
+            const data = {
+                account_id: $("#send-account-select").val(),
+                to_email: $("#send-to").val(),
+                content: $("#send-content").val(),
+                immediate: true // 标记为立即发送
+            };
+            
+            if(!data.account_id) { alert("请先选择发件邮箱"); return; }
+            
+            const btn = $(event.target);
+            const originalText = btn.html();
+            btn.prop('disabled', true).text('发送中...');
+
+            fetch(API_BASE + '/api/tasks', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(res => {
+                btn.prop('disabled', false).html(originalText);
+                if(res.ok) {
+                    alert("发送成功！");
+                } else {
+                    alert("发送失败: " + (res.error || '未知错误'));
+                }
+            })
+            .catch(e => {
+                btn.prop('disabled', false).html(originalText);
+                alert("网络错误");
             });
         }
 
