@@ -68,7 +68,7 @@ function calculateDelay(configStr) {
 
 // 1. 发送邮件核心函数 (合并版：支持 Subject/DefaultContent + GAS 表单模式)
 async function executeSendEmail(account, toEmail, subject, content) {
-    // 默认值处理 (来自上一轮需求)
+    // 默认值处理
     const finalSubject = subject ? subject : "Remind";
     const finalContent = content ? content : "Reminder of current time: " + new Date().toUTCString();
 
@@ -82,12 +82,12 @@ async function executeSendEmail(account, toEmail, subject, content) {
                 scriptUrl += '?';
             }
 
-            // === 改用 URLSearchParams 发送表单数据 (来自本次提供的代码) ===
+            // === 改用 URLSearchParams 发送表单数据 ===
             const params = new URLSearchParams();
             params.append('action', 'send'); 
             params.append('to', toEmail);
-            params.append('subject', finalSubject); // 使用处理后的主题
-            params.append('body', finalContent);    // 使用处理后的内容
+            params.append('subject', finalSubject); 
+            params.append('body', finalContent);    
 
             const resp = await fetch(scriptUrl, {
                 method: 'POST',
@@ -107,7 +107,7 @@ async function executeSendEmail(account, toEmail, subject, content) {
                 throw new Error("GAS返回了HTML。请检查：1.部署权限是否为'任何人'; 2.URL是否正确");
             }
             
-            // JSON/文本 逻辑检查 (增强版兼容性)
+            // JSON/文本 逻辑检查
             try {
                 if (text.includes("OK") || text.includes("Sent") || text.includes("成功")) {
                     return { success: true };
@@ -203,7 +203,7 @@ async function handleAccounts(req, env) {
   
   if (method === 'POST') {
     const data = await req.json();
-    // 批量导入逻辑 (保留)
+    // 批量导入逻辑
     if (Array.isArray(data)) {
         const stmt = env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?)");
         const batch = data.map(acc => stmt.bind(acc.name, acc.alias, acc.type, acc.script_url, acc.status ? 1 : 0));
@@ -225,7 +225,7 @@ async function handleAccounts(req, env) {
 
   if (method === 'DELETE') {
     const id = url.searchParams.get('id');
-    const ids = url.searchParams.get('ids'); // 批量删除 (保留)
+    const ids = url.searchParams.get('ids'); 
     
     if (ids) {
         const idList = ids.split(',').map(Number);
@@ -247,7 +247,7 @@ async function handleTasks(req, env) {
   if (method === 'POST') {
     const data = await req.json();
     
-    // 批量添加任务 (保留)
+    // 批量添加任务
     if (Array.isArray(data)) {
          const stmt = env.DB.prepare(`
             INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
@@ -314,7 +314,7 @@ async function handleTasks(req, env) {
           return new Response(JSON.stringify({ ok: false, error: "Task not found" }), { headers: corsHeaders() });
       }
 
-      // 编辑任务 (保留)
+      // 编辑任务
       if (data.id) {
           let nextRun = Date.now();
           if (data.base_date) nextRun = new Date(data.base_date).getTime();
@@ -349,9 +349,30 @@ async function handleTasks(req, env) {
   return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
 }
 
+// 修改后的 handleEmails 函数
 async function handleEmails(req, env) {
-   const { results } = await env.DB.prepare("SELECT * FROM received_emails ORDER BY received_at DESC LIMIT 50").all();
-   return new Response(JSON.stringify(results), { headers: corsHeaders() });
+   const url = new URL(req.url);
+   
+   // 1. 获取 limit 参数，如果未提供或无效，默认查 50 条
+   let limit = parseInt(url.searchParams.get('limit'));
+   if (!limit || limit <= 0) limit = 5;
+   
+   // 2. 获取 account_id 参数
+   const accountId = url.searchParams.get('account_id');
+
+   if (accountId) {
+       // 如果指定了邮箱ID，查询该邮箱的最新 N 封邮件
+       const { results } = await env.DB.prepare(
+           "SELECT * FROM received_emails WHERE account_id = ? ORDER BY received_at DESC LIMIT ?"
+       ).bind(accountId, limit).all();
+       return new Response(JSON.stringify(results), { headers: corsHeaders() });
+   } else {
+       // 如果没指定邮箱 (比如查看所有)，查询全局最新 N 封
+       const { results } = await env.DB.prepare(
+           "SELECT * FROM received_emails ORDER BY received_at DESC LIMIT ?"
+       ).bind(limit).all();
+       return new Response(JSON.stringify(results), { headers: corsHeaders() });
+   }
 }
 
 async function processScheduledTasks(env) {
