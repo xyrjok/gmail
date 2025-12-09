@@ -20,7 +20,7 @@
         }
         .form-control:focus, .form-select:focus {
             border: 1px solid var(--primary-blue);
-            box-shadow: 0 0 8px rgba(0, 123, 255, 0.6); /* 聚焦蓝光 */
+            box-shadow: 0 0 8px rgba(0, 123, 255, 0.6);
             outline: none;
         }
         h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.5px; }
@@ -84,14 +84,14 @@
     <div class="d-flex" id="wrapper">
         <div id="sidebar-wrapper">
             <div class="sidebar-heading text-center py-4 fs-4 border-bottom border-secondary">
-                <i class="far fa-mail-bulk"></i> Gmail Manager
+                <i class="fas fa-mail-bulk"></i> Gmail Manager
             </div>
             <div class="list-group list-group-flush">
-                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="far fa-users-cog me-2"></i> 邮箱管理</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="far fa-paper-plane me-2"></i> 发件设置</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="far fa-inbox-in me-2"></i> 收件设置</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-system')"><i class="far fa-cogs me-2"></i> 系统设置</a>
-                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="far fa-sign-out me-2"></i> 退出登录</a>
+                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="fas fa-users-cog me-2"></i> 邮箱管理</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="fas fa-paper-plane me-2"></i> 发件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="fas fa-inbox me-2"></i> 收件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-system')"><i class="fas fa-cogs me-2"></i> 系统设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="fas fa-sign-out-alt me-2"></i> 退出登录</a>
             </div>
         </div>
 
@@ -102,8 +102,8 @@
                 <div class="card shadow-sm">
                     <div class="card-body">
                         <div class="mb-3">
-                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal"><i class="far fa-plus"></i> 添加邮箱</button>
-                            <button class="btn btn-sm btn-danger"><i class="far fa-trash"></i> 批量删除</button>
+                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal"><i class="fas fa-plus"></i> 添加邮箱</button>
+                            <button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> 批量删除</button>
                         </div>
                         <table class="table table-hover table-sm">
                             <thead>
@@ -158,8 +158,8 @@
                                     <label class="form-check-label" for="loop-switch">启用循环开关 (完成后重新按B框规则排期)</label>
                                 </div>
                                 
-                                <button class="btn btn-primary w-100" onclick="addTask()"><i class="far fa-clock"></i> 添加任务</button>
-                                <button class="btn btn-success w-100 mt-2" onclick="sendNow()"><i class="far fa-paper-plane"></i> 立即发送</button>
+                                <button class="btn btn-primary w-100" onclick="addTask()"><i class="fas fa-clock"></i> 添加任务</button>
+                                <button class="btn btn-success w-100 mt-2" onclick="sendNow()"><i class="fas fa-paper-plane"></i> 立即发送</button>
                             </div>
                         </div>
                     </div>
@@ -168,7 +168,7 @@
                             <div class="card-header bg-white">任务队列</div>
                             <div class="card-body p-0">
                                 <table class="table table-sm table-striped m-0">
-                                    <thead><tr><th>邮箱</th><th>收件人</th><th>下次运行</th><th>循环</th><th>状态</th></tr></thead>
+                                    <thead><tr><th>邮箱</th><th>收件人</th><th>下次运行</th><th>循环</th><th>状态</th><th>操作</th></tr></thead>
                                     <tbody id="task-list-body"></tbody>
                                 </table>
                             </div>
@@ -247,7 +247,6 @@
             const token = btoa(u + ":" + p);
             localStorage.setItem("auth_token", token);
             
-            // 简单验证一下
             fetch(API_BASE, { headers: { 'Authorization': 'Basic ' + token } })
                 .then(res => {
                     if(res.ok) {
@@ -266,6 +265,11 @@
             };
         }
 
+        function doLogout() {
+            localStorage.removeItem("auth_token");
+            location.reload();
+        }
+
         // 页面切换
         function showSection(id) {
             $(".content-section").removeClass("active");
@@ -275,12 +279,8 @@
             
             if(id === 'section-accounts' || id === 'section-send') loadAccounts();
             if(id === 'section-send') loadTasks();
-            
-            // 修改点 3: 切换到收件设置时，加载邮箱列表
             if(id === 'section-receive') loadInboxAccounts();
         }
-
-        // --- 核心功能 API 调用 ---
 
         function loadAccounts() {
             fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
@@ -295,7 +295,7 @@
                             <td>${acc.alias}</td>
                             <td><span class="badge bg-secondary">${acc.type}</span></td>
                             <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${acc.status?'checked':''}></div></td>
-                            <td><button class="btn btn-sm btn-light text-primary"><i class="far fa-edit"></i></button> <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="far fa-trash"></i></button></td>
+                            <td><button class="btn btn-sm btn-light text-primary"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button></td>
                         </tr>`;
                         selectHtml += `<option value="${acc.id}">${acc.name}</option>`;
                     });
@@ -304,7 +304,6 @@
                 });
         }
 
-        // 修改点 4: 新增收件页面邮箱加载函数
         function loadInboxAccounts() {
             fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
                 .then(r => r.json())
@@ -315,7 +314,7 @@
                     } else {
                         data.forEach(acc => {
                             html += `
-                            <div class="email-item" onclick="alert('加载账号 ID: ${acc.id} 的邮件逻辑待开发')">
+                            <div class="email-item" onclick="alert('账号ID: ${acc.id}')">
                                 ${acc.name} 
                                 <span class="badge bg-secondary rounded-pill float-end" style="font-size:0.7rem">${acc.type}</span>
                             </div>`;
@@ -356,8 +355,8 @@
                 account_id: $("#send-account-select").val(),
                 to_email: $("#send-to").val(),
                 content: $("#send-content").val(),
-                base_date: $("#date-a").val(), // A框
-                delay_config: $("#range-b").val(), // B框
+                base_date: $("#date-a").val(),
+                delay_config: $("#range-b").val(),
                 is_loop: $("#loop-switch").is(":checked")
             };
             fetch(API_BASE + '/api/tasks', {
@@ -370,21 +369,18 @@
             });
         }
 
-        // 修改点 5: 新增立即发送函数
         function sendNow() {
             const data = {
                 account_id: $("#send-account-select").val(),
                 to_email: $("#send-to").val(),
                 content: $("#send-content").val(),
-                immediate: true // 标记为立即发送
+                immediate: true
             };
-            
             if(!data.account_id) { alert("请先选择发件邮箱"); return; }
-            
             const btn = $(event.target);
             const originalText = btn.html();
             btn.prop('disabled', true).text('发送中...');
-
+            
             fetch(API_BASE + '/api/tasks', {
                 method: 'POST',
                 headers: getHeaders(),
@@ -393,37 +389,70 @@
             .then(r => r.json())
             .then(res => {
                 btn.prop('disabled', false).html(originalText);
-                if(res.ok) {
-                    alert("发送成功！");
-                } else {
-                    alert("发送失败: " + (res.error || '未知错误'));
-                }
+                if(res.ok) alert("发送成功！");
+                else alert("发送失败: " + (res.error || '未知错误'));
             })
-            .catch(e => {
+            .catch(() => {
                 btn.prop('disabled', false).html(originalText);
                 alert("网络错误");
             });
         }
 
+        // 修改后的 loadTasks，支持手动执行按钮
         function loadTasks() {
             fetch(API_BASE + '/api/tasks', { headers: getHeaders() })
                 .then(r => r.json())
                 .then(data => {
                     let html = '';
                     data.forEach(task => {
+                        let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
+                        let loopIcon = task.is_loop ? '<i class="fas fa-sync text-success"></i>' : '-';
+                        
                         html += `<tr>
                             <td>${task.account_id}</td>
                             <td>${task.to_email}</td>
                             <td>${new Date(task.next_run_at).toLocaleString()}</td>
-                            <td>${task.is_loop ? '<i class="far fa-sync text-success"></i>' : '-'}</td>
-                            <td>${task.status}</td>
+                            <td>${loopIcon}</td>
+                            <td class="${statusColor} fw-bold">${task.status}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary py-0" onclick="manualRun(${task.id})">
+                                    <i class="fas fa-play"></i> 执行
+                                </button>
+                            </td>
                         </tr>`;
                     });
                     $("#task-list-body").html(html);
                 });
         }
 
-        // 初始化
+        // 新增：手动执行任务函数
+        function manualRun(id) {
+            if(!confirm("确定要立即手动执行此任务吗？")) return;
+            const btn = $(event.currentTarget);
+            const originalHtml = btn.html();
+            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+
+            fetch(API_BASE + '/api/tasks', {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(res => {
+                if(res.ok) {
+                    alert("执行完成");
+                    loadTasks();
+                } else {
+                    alert("执行失败: " + (res.error || "未知错误"));
+                    btn.prop('disabled', false).html(originalHtml);
+                }
+            })
+            .catch(() => {
+                alert("网络请求失败");
+                btn.prop('disabled', false).html(originalHtml);
+            });
+        }
+
         if(localStorage.getItem("auth_token")) {
             $("#login-overlay").hide();
             loadAccounts();
