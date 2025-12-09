@@ -66,15 +66,15 @@ function calculateDelay(configStr) {
 
 // --- 核心业务逻辑 ---
 
-// 1. 发送邮件核心函数 (包含 URL 智能修正和 GAS 校验)
-async function executeSendEmail(account, toEmail, content) {
+// 1. 发送邮件核心函数 (合并版：支持 Subject/DefaultContent + GAS 表单模式)
+async function executeSendEmail(account, toEmail, subject, content) {
+    // 默认值处理 (来自上一轮需求)
+    const finalSubject = subject ? subject : "Remind";
+    const finalContent = content ? content : "Reminder of current time: " + new Date().toUTCString();
+
     try {
         if (account.type === 'GAS') {
             // === URL 智能修正逻辑 ===
-            // 用户要求：把带token和不带看成一个整体，后面自动添加后缀
-            // 实现：
-            // 1. 如果 URL 里没有 '?'，说明是纯链接，添加 '?' (符合 .../exec? 格式)
-            // 2. 如果 URL 里已有 '?'，说明有 token，添加 '&' (符合 ...token=123& 格式，防止破坏 token 值)
             let scriptUrl = account.script_url.trim();
             if (scriptUrl.includes('?')) {
                 if (!scriptUrl.endsWith('&')) scriptUrl += '&';
@@ -82,10 +82,19 @@ async function executeSendEmail(account, toEmail, content) {
                 scriptUrl += '?';
             }
 
+            // === 改用 URLSearchParams 发送表单数据 (来自本次提供的代码) ===
+            const params = new URLSearchParams();
+            params.append('action', 'send'); 
+            params.append('to', toEmail);
+            params.append('subject', finalSubject); // 使用处理后的主题
+            params.append('body', finalContent);    // 使用处理后的内容
+
             const resp = await fetch(scriptUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to: toEmail, subject: "Auto Mail", body: content })
+                headers: { 
+                    'Content-Type': 'application/x-www-form-urlencoded' 
+                },
+                body: params.toString()
             });
             
             const text = await resp.text();
@@ -93,31 +102,41 @@ async function executeSendEmail(account, toEmail, content) {
             // HTTP 状态检查
             if (!resp.ok) throw new Error(`GAS HTTP Error: ${resp.status}`);
             
-            // HTML 返回检查 (GAS 权限错误或 URL 错误通常返回 HTML)
+            // HTML 返回检查
             if (text.trim().startsWith("<")) {
                 throw new Error("GAS返回了HTML。请检查：1.部署权限是否为'任何人'; 2.URL是否正确");
             }
             
-            // JSON 逻辑检查
+            // JSON/文本 逻辑检查 (增强版兼容性)
             try {
+                if (text.includes("OK") || text.includes("Sent") || text.includes("成功")) {
+                    return { success: true };
+                }
+
                 const json = JSON.parse(text);
-                if (json.result !== 'success') {
-                    throw new Error(`GAS Refused: ${json.message || '未知错误'}`);
+                if (json.result === 'success' || json.status === 'success') {
+                    return { success: true };
+                } else {
+                    throw new Error(`GAS Refused: ${json.message || json.error || '未知错误'}`);
                 }
             } catch (e) {
-                if (e.message.startsWith("GAS Refused")) throw e;
-                throw new Error(`GAS Response Invalid: ${text.substring(0, 50)}...`);
+                if (!text.includes("OK") && !text.includes("Sent") && !text.includes("成功")) {
+                    if (e.message.startsWith("GAS Refused")) throw e;
+                    throw new Error(`GAS Response Invalid: ${text.substring(0, 50)}...`);
+                }
+                return { success: true };
             }
-            
-            return { success: true };
 
         } else if (account.type === 'API') {
             const token = account.script_url; 
-            const emailBody = `To: ${toEmail}\r\n` +
-                              `Subject: Auto Mail\r\n` +
-                              `Content-Type: text/plain; charset="UTF-8"\r\n\r\n` +
-                              content;
+            const emailLines = [];
+            emailLines.push(`To: ${toEmail}`);
+            emailLines.push(`Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(finalSubject)))}?=`);
+            emailLines.push(`Content-Type: text/plain; charset="UTF-8"`);
+            emailLines.push(``);
+            emailLines.push(finalContent);
             
+            const emailBody = emailLines.join('\r\n');
             const raw = btoa(unescape(encodeURIComponent(emailBody)))
                         .replace(/\+/g, '-')
                         .replace(/\//g, '_')
@@ -184,6 +203,14 @@ async function handleAccounts(req, env) {
   
   if (method === 'POST') {
     const data = await req.json();
+    // 批量导入逻辑 (保留)
+    if (Array.isArray(data)) {
+        const stmt = env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?)");
+        const batch = data.map(acc => stmt.bind(acc.name, acc.alias, acc.type, acc.script_url, acc.status ? 1 : 0));
+        await env.DB.batch(batch);
+        return new Response(JSON.stringify({ ok: true, count: data.length }), { headers: corsHeaders() });
+    }
+    
     await env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?)")
       .bind(data.name, data.alias, data.type, data.script_url, data.status ? 1 : 0).run();
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
@@ -191,8 +218,6 @@ async function handleAccounts(req, env) {
 
   if (method === 'PUT') {
     const data = await req.json();
-    if (!data.id) return new Response(JSON.stringify({ error: "Missing ID" }), { status: 400, headers: corsHeaders() });
-    
     await env.DB.prepare("UPDATE accounts SET name=?, alias=?, type=?, script_url=?, status=? WHERE id=?")
       .bind(data.name, data.alias, data.type, data.script_url, data.status ? 1 : 0, data.id).run();
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
@@ -200,7 +225,15 @@ async function handleAccounts(req, env) {
 
   if (method === 'DELETE') {
     const id = url.searchParams.get('id');
-    await env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id).run();
+    const ids = url.searchParams.get('ids'); // 批量删除 (保留)
+    
+    if (ids) {
+        const idList = ids.split(',').map(Number);
+        const stmt = env.DB.prepare("DELETE FROM accounts WHERE id = ?");
+        await env.DB.batch(idList.map(i => stmt.bind(i)));
+    } else if (id) {
+        await env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id).run();
+    }
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
   
@@ -209,15 +242,34 @@ async function handleAccounts(req, env) {
 
 async function handleTasks(req, env) {
   const method = req.method;
-  
+  const url = new URL(req.url);
+
   if (method === 'POST') {
     const data = await req.json();
+    
+    // 批量添加任务 (保留)
+    if (Array.isArray(data)) {
+         const stmt = env.DB.prepare(`
+            INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+         `);
+         const batch = data.map(t => {
+            let nextRun = Date.now();
+            if (t.base_date) nextRun = new Date(t.base_date).getTime();
+            if (t.delay_config) nextRun += calculateDelay(t.delay_config);
+            return stmt.bind(t.account_id, t.to_email, t.subject, t.content, t.base_date, t.delay_config, nextRun, t.is_loop, t.execution_mode || 'AUTO');
+         });
+         await env.DB.batch(batch);
+         return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
+    }
+
     const mode = data.execution_mode || 'AUTO';
 
     if (data.immediate) {
         try {
             const account = await findBestAccount(env, data.account_id, mode);
-            const result = await executeSendEmail(account, data.to_email, data.content);
+            // 传递 subject
+            const result = await executeSendEmail(account, data.to_email, data.subject, data.content);
             return new Response(JSON.stringify({ ok: result.success, error: result.error }), { headers: corsHeaders() });
         } catch (e) {
             return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
@@ -228,39 +280,69 @@ async function handleTasks(req, env) {
     if (data.base_date) nextRun = new Date(data.base_date).getTime();
     if (data.delay_config) nextRun += calculateDelay(data.delay_config);
 
+    // 写入 subject
     await env.DB.prepare(`
-      INSERT INTO send_tasks (account_id, to_email, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    `).bind(data.account_id, data.to_email, data.content, data.base_date, data.delay_config, nextRun, data.is_loop, mode).run();
+      INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    `).bind(data.account_id, data.to_email, data.subject, data.content, data.base_date, data.delay_config, nextRun, data.is_loop, mode).run();
     
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
   
   if (method === 'PUT') {
       const data = await req.json();
-      const task = await env.DB.prepare("SELECT * FROM send_tasks WHERE id = ?").bind(data.id).first();
       
-      if(task) {
-          try {
-              const mode = task.execution_mode || 'AUTO';
-              const account = await findBestAccount(env, task.account_id, mode);
-              const res = await executeSendEmail(account, task.to_email, task.content);
-              
-              if (res.success) {
-                   await env.DB.prepare("UPDATE send_tasks SET status = 'success' WHERE id = ?").bind(task.id).run();
-                   return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
-              } else {
-                   return new Response(JSON.stringify({ ok: false, error: res.error }), { headers: corsHeaders() });
+      // 手动执行
+      if (data.action === 'execute') {
+          const task = await env.DB.prepare("SELECT * FROM send_tasks WHERE id = ?").bind(data.id).first();
+          if(task) {
+              try {
+                  const mode = task.execution_mode || 'AUTO';
+                  const account = await findBestAccount(env, task.account_id, mode);
+                  const res = await executeSendEmail(account, task.to_email, task.subject, task.content);
+                  
+                  if (res.success) {
+                       await env.DB.prepare("UPDATE send_tasks SET status = 'success' WHERE id = ?").bind(task.id).run();
+                       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
+                  } else {
+                       return new Response(JSON.stringify({ ok: false, error: res.error }), { headers: corsHeaders() });
+                  }
+              } catch(e) {
+                  return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
               }
-          } catch(e) {
-              return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
           }
+          return new Response(JSON.stringify({ ok: false, error: "Task not found" }), { headers: corsHeaders() });
       }
-      return new Response(JSON.stringify({ ok: false, error: "Task not found" }), { headers: corsHeaders() });
+
+      // 编辑任务 (保留)
+      if (data.id) {
+          let nextRun = Date.now();
+          if (data.base_date) nextRun = new Date(data.base_date).getTime();
+          await env.DB.prepare(`
+            UPDATE send_tasks 
+            SET account_id=?, to_email=?, subject=?, content=?, base_date=?, delay_config=?, is_loop=?, execution_mode=?, next_run_at=? 
+            WHERE id=?
+          `).bind(data.account_id, data.to_email, data.subject, data.content, data.base_date, data.delay_config, data.is_loop, data.execution_mode, nextRun, data.id).run();
+          return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
+      }
+  }
+
+  // DELETE 支持批量
+  if (method === 'DELETE') {
+    const id = url.searchParams.get('id');
+    const ids = url.searchParams.get('ids');
+    if (ids) {
+        const idList = ids.split(',').map(Number);
+        const stmt = env.DB.prepare("DELETE FROM send_tasks WHERE id = ?");
+        await env.DB.batch(idList.map(i => stmt.bind(i)));
+    } else if (id) {
+        await env.DB.prepare("DELETE FROM send_tasks WHERE id = ?").bind(id).run();
+    }
+    return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
 
   if (method === 'GET') {
-     const { results } = await env.DB.prepare("SELECT * FROM send_tasks ORDER BY next_run_at ASC LIMIT 50").all();
+     const { results } = await env.DB.prepare("SELECT * FROM send_tasks ORDER BY next_run_at ASC LIMIT 100").all();
      return new Response(JSON.stringify(results), { headers: corsHeaders() });
   }
   
@@ -281,7 +363,8 @@ async function processScheduledTasks(env) {
             const mode = task.execution_mode || 'AUTO';
             const account = await findBestAccount(env, task.account_id, mode);
             
-            const res = await executeSendEmail(account, task.to_email, task.content);
+            // 调度任务也需要传递 subject
+            const res = await executeSendEmail(account, task.to_email, task.subject, task.content);
             
             if(!res.success) {
                  await env.DB.prepare("UPDATE send_tasks SET status = 'error' WHERE id = ?").bind(task.id).run();
