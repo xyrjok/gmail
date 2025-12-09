@@ -3,344 +3,371 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gmail API 管理后台</title>
+    <title>Gmail 管理系统</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://bk.xyrj.dpdns.org/themes/xyrj/files/fonts/fontawesome5pro-all.min.css">
-    
+    <link href="https://bk.xyrj.dpdns.org/themes/xyrj/files/fonts/fontawesome5pro-all.min.css" rel="stylesheet">
     <style>
-        /* 全局紧凑风格设置 */
-        body {
-            font-size: 0.85rem; /* 字体改小 */
-            background-color: #f4f6f9;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        :root {
+            --sidebar-width: 250px;
+            --primary-blue: #007bff;
         }
-
-        /* 侧边栏样式 */
-        #sidebar-wrapper {
-            min-height: 100vh;
-            width: 220px;
-            background-color: #343a40;
-            color: #fff;
-            position: fixed;
-        }
-        .sidebar-heading {
-            padding: 1rem;
-            font-size: 1.1rem;
-            font-weight: bold;
-            border-bottom: 1px solid #4b545c;
-        }
-        .list-group-item {
-            background-color: transparent;
-            color: #c2c7d0;
-            border: none;
-            padding: 0.75rem 1.25rem;
-            font-size: 0.9rem;
-        }
-        .list-group-item:hover, .list-group-item.active {
-            background-color: #494e53;
-            color: #fff;
-            cursor: pointer;
-        }
-        .list-group-item i {
-            width: 25px;
-            text-align: center;
-        }
-
-        /* 内容区样式 */
-        #page-content-wrapper {
-            margin-left: 220px;
-            padding: 20px;
-        }
-
-        /* 表单控件优化：1px蓝边 + 聚焦蓝光 */
+        body { font-size: 0.9rem; background-color: #f8f9fa; overflow-x: hidden; }
+        
+        /* 紧凑与聚焦样式 */
         .form-control, .form-select {
-            font-size: 0.85rem;
-            padding: 0.25rem 0.5rem; /* 紧凑内边距 */
-            border-radius: 3px;
+            font-size: 0.9rem;
+            padding: 0.4rem 0.6rem;
         }
         .form-control:focus, .form-select:focus {
-            border: 1px solid #007bff;
-            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25); /* 聚焦蓝光 */
+            border: 1px solid var(--primary-blue);
+            box-shadow: 0 0 8px rgba(0, 123, 255, 0.6); /* 聚焦蓝光 */
+            outline: none;
+        }
+        h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.5px; }
+
+        /* 侧边栏布局 */
+        #sidebar-wrapper {
+            min-height: 100vh;
+            margin-left: -var(--sidebar-width);
+            transition: margin .25s ease-out;
+            background: #343a40;
+            color: #fff;
+            position: fixed;
+            width: var(--sidebar-width);
+            z-index: 1000;
+        }
+        #sidebar-wrapper .list-group-item {
+            background-color: transparent;
+            color: #ccc;
+            border: none;
+            padding: 1rem 1.5rem;
+        }
+        #sidebar-wrapper .list-group-item:hover, .list-group-item.active {
+            background-color: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        #page-content-wrapper {
+            width: 100%;
+            padding-left: var(--sidebar-width);
         }
         
-        /* 表格紧凑 */
-        .table td, .table th {
-            padding: 0.4rem;
-            vertical-align: middle;
-        }
-
-        /* 标题紧凑 */
-        h4 {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 15px;
-            border-left: 4px solid #007bff;
-            padding-left: 10px;
-        }
-
-        /* 收件设置布局 */
-        .mail-list-col {
-            border-right: 1px solid #dee2e6;
-            height: calc(100vh - 100px);
-            overflow-y: auto;
-        }
-        .mail-content-col {
-            height: calc(100vh - 100px);
-            overflow-y: auto;
-            background: #fff;
-            padding: 15px;
-        }
-        .mail-item {
-            padding: 10px;
-            border-bottom: 1px solid #f0f0f0;
-            cursor: pointer;
-        }
-        .mail-item:hover, .mail-item.active {
-            background-color: #e9ecef;
-        }
+        /* 布局区块 */
+        .content-section { display: none; padding: 20px; }
+        .content-section.active { display: block; }
         
-        /* 隐藏/显示控制 */
-        .view-section {
-            display: none;
-        }
-        .view-section.active {
-            display: block;
+        /* 收件箱分栏 */
+        .split-view { display: flex; height: calc(100vh - 60px); }
+        .col-c { width: 300px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
+        .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
+        .email-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .email-item:hover { background-color: #f1f1f1; }
+        
+        /* 登录遮罩 */
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; z-index: 9999; display: flex;
+            align-items: center; justify-content: center;
         }
     </style>
 </head>
 <body>
 
-<div class="d-flex" id="wrapper">
-    <div id="sidebar-wrapper">
-        <div class="sidebar-heading">Gmail Manager</div>
-        <div class="list-group list-group-flush">
-            <a class="list-group-item list-group-item-action active" onclick="switchTab('email-mgmt')">
-                <i class="fad fa-mailbox"></i> 邮箱管理
-            </a>
-            <a class="list-group-item list-group-item-action" onclick="switchTab('send-settings')">
-                <i class="fad fa-paper-plane"></i> 发件设置
-            </a>
-            <a class="list-group-item list-group-item-action" onclick="switchTab('receive-settings')">
-                <i class="fad fa-inbox-in"></i> 收件设置
-            </a>
-            <a class="list-group-item list-group-item-action" onclick="switchTab('system-settings')">
-                <i class="fad fa-cogs"></i> 系统设置
-            </a>
-            <a class="list-group-item list-group-item-action text-danger mt-5" href="#">
-                <i class="fad fa-sign-out"></i> 退出登陆
-            </a>
+    <div id="login-overlay">
+        <div class="card p-4 shadow" style="width: 350px;">
+            <h4 class="text-center mb-3">系统登录</h4>
+            <input type="text" id="admin-user" class="form-control mb-2" placeholder="用户名 (ADMIN_USERNAME)">
+            <input type="password" id="admin-pass" class="form-control mb-3" placeholder="密码 (ADMIN_PASSWORD)">
+            <button class="btn btn-primary w-100" onclick="doLogin()">登录</button>
         </div>
     </div>
 
-    <div id="page-content-wrapper">
-        
-        <div id="email-mgmt" class="view-section active">
-            <h4>邮箱管理</h4>
-            <div class="card shadow-sm mb-3">
-                <div class="card-body p-2">
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-primary"><i class="fas fa-plus"></i> 新增邮箱</button>
-                        <button class="btn btn-danger"><i class="fas fa-trash"></i> 批量删除</button>
-                        <button class="btn btn-success"><i class="fas fa-file-import"></i> 批量添加</button>
+    <div class="d-flex" id="wrapper">
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading text-center py-4 fs-4 border-bottom border-secondary">
+                <i class="fad fa-mail-bulk"></i> Gmail Manager
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="fad fa-users-cog me-2"></i> 邮箱管理</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="fad fa-paper-plane me-2"></i> 发件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="fad fa-inbox-in me-2"></i> 收件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-system')"><i class="fad fa-cogs me-2"></i> 系统设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="fad fa-sign-out me-2"></i> 退出登录</a>
+            </div>
+        </div>
+
+        <div id="page-content-wrapper">
+            
+            <div id="section-accounts" class="content-section active">
+                <h3 class="mb-4">邮箱管理</h3>
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal"><i class="fad fa-plus"></i> 添加邮箱</button>
+                            <button class="btn btn-sm btn-danger"><i class="fad fa-trash"></i> 批量删除</button>
+                        </div>
+                        <table class="table table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox"></th>
+                                    <th>名称</th>
+                                    <th>别名</th>
+                                    <th>类型</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="account-list-body">
+                                </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
-            
-            <table class="table table-hover table-bordered bg-white">
-                <thead class="table-light">
-                    <tr>
-                        <th width="30"><input type="checkbox"></th>
-                        <th>邮箱名</th>
-                        <th>别名</th>
-                        <th>Script URL</th>
-                        <th>状态</th>
-                        <th width="120">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><input type="checkbox"></td>
-                        <td>user@gmail.com</td>
-                        <td>Project A</td>
-                        <td>https://script.google.com/...</td>
-                        <td>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" checked>
+
+            <div id="section-send" class="content-section">
+                <h3 class="mb-4">发件设置 & 循环任务</h3>
+                <div class="row">
+                    <div class="col-md-5">
+                        <div class="card shadow-sm mb-3">
+                            <div class="card-header bg-white">创建新任务</div>
+                            <div class="card-body">
+                                <label class="form-label">选择发件邮箱</label>
+                                <select class="form-select mb-2" id="send-account-select"></select>
+                                
+                                <label class="form-label">收件人</label>
+                                <input type="text" class="form-control mb-2" id="send-to" placeholder="多个用逗号分隔">
+                                
+                                <label class="form-label">发送内容</label>
+                                <textarea class="form-control mb-2" id="send-content" rows="3"></textarea>
+                                
+                                <hr>
+                                <label class="form-label fw-bold">定时与循环设置</label>
+                                
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6">
+                                        <label class="small text-muted">A框: 起始日期时间</label>
+                                        <input type="datetime-local" class="form-control" id="date-a">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="small text-muted">B框: 随机天数范围 (如: 10-20)</label>
+                                        <input type="text" class="form-control" id="range-b" placeholder="10-20">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" id="loop-switch">
+                                    <label class="form-check-label" for="loop-switch">启用循环开关 (完成后重新按B框规则排期)</label>
+                                </div>
+                                
+                                <button class="btn btn-primary w-100" onclick="addTask()"><i class="fad fa-clock"></i> 添加任务</button>
                             </div>
-                        </td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-primary py-0"><i class="fas fa-edit"></i></button>
-                            <button class="btn btn-sm btn-outline-danger py-0"><i class="fas fa-trash-alt"></i></button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div id="send-settings" class="view-section">
-            <h4>发件设置</h4>
-            <div class="card shadow-sm mb-3">
-                <div class="card-body p-2">
-                    <button class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> 新增任务</button>
-                    <button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> 批量删除</button>
-                </div>
-            </div>
-
-            <div class="card shadow-sm p-3 mb-3 bg-white">
-                <div class="row g-2">
-                    <div class="col-md-3">
-                        <label class="form-label text-muted">发件邮箱</label>
-                        <select class="form-select">
-                            <option>user@gmail.com</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label text-muted">收件邮箱</label>
-                        <input type="text" class="form-control" placeholder="target@example.com">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted">定时设置 (逻辑核心)</label>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text">起</span>
-                            <input type="datetime-local" class="form-control" id="timeA">
-                            <span class="input-group-text">+</span>
-                            <input type="text" class="form-control" placeholder="天数或范围(如10-20)" id="timeB">
-                            <span class="input-group-text">天</span>
                         </div>
-                        <small class="text-muted" style="font-size: 0.75rem;">
-                            * 若A空，则从"现在"开始+B范围随机时间。
-                        </small>
                     </div>
-                    
-                    <div class="col-md-12 mt-2">
-                        <label class="form-label text-muted">邮件内容</label>
-                        <textarea class="form-control" rows="3"></textarea>
-                    </div>
-
-                    <div class="col-md-12 mt-2 d-flex justify-content-between align-items-center">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="loopSwitch">
-                            <label class="form-check-label fw-bold text-primary" for="loopSwitch">
-                                <i class="fad fa-sync"></i> 开启循环发送
-                            </label>
-                            <span class="text-muted ms-2" style="font-size: 0.8rem">
-                                (发送完后按范围天数重新随机)
-                            </span>
-                        </div>
-                        <div>
-                             <button class="btn btn-sm btn-primary"><i class="fas fa-save"></i> 保存设置</button>
+                    <div class="col-md-7">
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-white">任务队列</div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm table-striped m-0">
+                                    <thead><tr><th>邮箱</th><th>收件人</th><th>下次运行</th><th>循环</th><th>状态</th></tr></thead>
+                                    <tbody id="task-list-body"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <table class="table table-hover table-bordered bg-white table-sm">
-                <thead class="table-light">
-                    <tr>
-                        <th width="30"><input type="checkbox"></th>
-                        <th>发件人</th>
-                        <th>收件人</th>
-                        <th>下次运行</th>
-                        <th>规则</th>
-                        <th>循环</th>
-                        <th width="100">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><input type="checkbox"></td>
-                        <td>user@gmail.com</td>
-                        <td>client@test.com</td>
-                        <td>2023-10-25 14:30</td>
-                        <td>Start + 10-20 days</td>
-                        <td><span class="badge bg-success">开启</span></td>
-                        <td>
-                             <button class="btn btn-sm btn-outline-primary py-0"><i class="fas fa-edit"></i></button>
-                             <button class="btn btn-sm btn-outline-danger py-0"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
 
-        <div id="receive-settings" class="view-section">
-            <h4>收件设置</h4>
-            <div class="row g-0 border bg-white shadow-sm" style="min-height: 500px;">
-                <div class="col-md-3 mail-list-col">
-                    <div class="p-2 border-bottom bg-light d-flex justify-content-between">
-                        <strong>收件箱</strong>
-                        <div>
-                             <button class="btn btn-xs btn-outline-secondary" title="刷新"><i class="fas fa-sync"></i></button>
-                             <button class="btn btn-xs btn-outline-danger" title="批量删除"><i class="fas fa-trash"></i></button>
+            <div id="section-receive" class="content-section p-0">
+                <div class="split-view">
+                    <div class="col-c">
+                        <div class="p-3 border-bottom font-weight-bold">邮箱列表</div>
+                        <div id="inbox-account-list">
+                            <div class="email-item">admin@example.com <span class="badge bg-primary rounded-pill float-end">2</span></div>
                         </div>
                     </div>
-                    <div class="mail-item active">
-                        <div class="d-flex w-100 justify-content-between">
-                            <strong class="mb-1 text-truncate">Google Alert</strong>
-                            <small class="text-muted">3天前</small>
+                    <div class="col-d">
+                        <div class="d-flex justify-content-between mb-3">
+                            <h4>邮件内容</h4>
+                            <div>
+                                <button class="btn btn-sm btn-danger">删除</button>
+                            </div>
                         </div>
-                        <p class="mb-1 text-truncate small text-muted">Security alert for your linked...</p>
-                    </div>
-                    <div class="mail-item">
-                        <div class="d-flex w-100 justify-content-between">
-                            <strong class="mb-1 text-truncate">Cloudflare</strong>
-                            <small class="text-muted">5天前</small>
+                        <div id="email-content-view">
+                            <p class="text-muted text-center mt-5">请在左侧选择邮箱查看邮件</p>
                         </div>
-                        <p class="mb-1 text-truncate small text-muted">Your invoice is ready...</p>
-                    </div>
-                </div>
-
-                <div class="col-md-9 mail-content-col bg-white">
-                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
-                        <h5 class="m-0">Security alert for your linked Google Account</h5>
-                        <div>
-                            <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i> 删除</button>
-                        </div>
-                    </div>
-                    <div class="email-body">
-                        <p>这里是邮件的具体内容显示区域...</p>
-                        <p>支持 HTML 渲染。</p>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div id="system-settings" class="view-section">
-            <h4>系统设置</h4>
-            <div class="alert alert-info">功能开发中...</div>
-        </div>
+            <div id="section-system" class="content-section">
+                <h3>系统设置</h3>
+                <p>功能待定...</p>
+            </div>
 
+        </div>
     </div>
-</div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <div class="modal fade" id="addAccountModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">添加邮箱</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名">
+                    <input type="text" class="form-control mb-2" id="acc-alias" placeholder="别名">
+                    <select class="form-select mb-2" id="acc-type">
+                        <option value="GAS">Gmail App (GAS)</option>
+                        <option value="API">Gmail API</option>
+                    </select>
+                    <input type="text" class="form-control mb-2" id="acc-script" placeholder="Script URL 或 Token">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="acc-status" checked>
+                        <label class="form-check-label">启用</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="addAccount()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-<script>
-    // 菜单切换逻辑
-    function switchTab(tabId) {
-        // 1. 隐藏所有 section
-        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-        // 2. 显示选中的 section
-        document.getElementById(tabId).classList.add('active');
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 配置你的 Worker URL
+        const API_BASE = "https://gmail.vobohe588.workers.dev";
         
-        // 3. 更新菜单激活状态
-        document.querySelectorAll('.list-group-item').forEach(el => el.classList.remove('active'));
-        // 简单匹配：这里可以通过 event.target 优化，演示方便直接用文字匹配或手动管理
-        event.currentTarget.classList.add('active');
-    }
+        // 认证逻辑
+        function doLogin() {
+            const u = $("#admin-user").val();
+            const p = $("#admin-pass").val();
+            const token = btoa(u + ":" + p);
+            localStorage.setItem("auth_token", token);
+            
+            // 简单验证一下
+            fetch(API_BASE, { headers: { 'Authorization': 'Basic ' + token } })
+                .then(res => {
+                    if(res.ok) {
+                        $("#login-overlay").fadeOut();
+                        loadAccounts();
+                    } else {
+                        alert("账号或密码错误");
+                    }
+                }).catch(()=> alert("连接失败，请检查 Worker URL"));
+        }
 
-    // 这里可以添加 fetch 调用 Worker API 的逻辑
-    const API_BASE = "https://your-worker.your-subdomain.workers.dev/api";
-    
-    // 示例：随机时间计算逻辑前端预演
-    function calculateSendTime() {
-        const dateA = document.getElementById('timeA').value;
-        const rangeB = document.getElementById('timeB').value; // e.g. "10-20"
-        
-        console.log(`基准时间: ${dateA || '当前时间'}, 延迟范围: ${rangeB} 天`);
-        // 实际提交时，将这两个值传给后端，由后端 Worker 在 Cron 中计算
-    }
-</script>
+        function getHeaders() {
+            return {
+                'Authorization': 'Basic ' + localStorage.getItem("auth_token"),
+                'Content-Type': 'application/json'
+            };
+        }
 
+        // 页面切换
+        function showSection(id) {
+            $(".content-section").removeClass("active");
+            $("#" + id).addClass("active");
+            $(".list-group-item").removeClass("active");
+            $(event.currentTarget).addClass("active");
+            
+            if(id === 'section-accounts' || id === 'section-send') loadAccounts();
+            if(id === 'section-send') loadTasks();
+        }
+
+        // --- 核心功能 API 调用 ---
+
+        function loadAccounts() {
+            fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    let html = '';
+                    let selectHtml = '';
+                    data.forEach(acc => {
+                        html += `<tr>
+                            <td><input type="checkbox" value="${acc.id}"></td>
+                            <td>${acc.name}</td>
+                            <td>${acc.alias}</td>
+                            <td><span class="badge bg-secondary">${acc.type}</span></td>
+                            <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${acc.status?'checked':''}></div></td>
+                            <td><button class="btn btn-sm btn-light text-primary"><i class="fad fa-edit"></i></button> <button class="btn btn-sm btn-light text-danger" onclick="delAccount(${acc.id})"><i class="fad fa-trash"></i></button></td>
+                        </tr>`;
+                        selectHtml += `<option value="${acc.id}">${acc.name}</option>`;
+                    });
+                    $("#account-list-body").html(html);
+                    $("#send-account-select").html(selectHtml);
+                });
+        }
+
+        function addAccount() {
+            const data = {
+                name: $("#acc-name").val(),
+                alias: $("#acc-alias").val(),
+                type: $("#acc-type").val(),
+                script_url: $("#acc-script").val(),
+                status: $("#acc-status").is(":checked")
+            };
+            fetch(API_BASE + '/api/accounts', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data)
+            }).then(() => {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addAccountModal'));
+                modal.hide();
+                loadAccounts();
+            });
+        }
+
+        function delAccount(id) {
+            if(confirm("确定删除?")) {
+                fetch(API_BASE + '/api/accounts?id=' + id, { method: 'DELETE', headers: getHeaders() })
+                    .then(loadAccounts);
+            }
+        }
+
+        function addTask() {
+            const data = {
+                account_id: $("#send-account-select").val(),
+                to_email: $("#send-to").val(),
+                content: $("#send-content").val(),
+                base_date: $("#date-a").val(), // A框
+                delay_config: $("#range-b").val(), // B框
+                is_loop: $("#loop-switch").is(":checked")
+            };
+            fetch(API_BASE + '/api/tasks', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data)
+            }).then(() => {
+                alert("任务已添加");
+                loadTasks();
+            });
+        }
+
+        function loadTasks() {
+            fetch(API_BASE + '/api/tasks', { headers: getHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    let html = '';
+                    data.forEach(task => {
+                        html += `<tr>
+                            <td>${task.account_id}</td>
+                            <td>${task.to_email}</td>
+                            <td>${new Date(task.next_run_at).toLocaleString()}</td>
+                            <td>${task.is_loop ? '<i class="fad fa-sync text-success"></i>' : '-'}</td>
+                            <td>${task.status}</td>
+                        </tr>`;
+                    });
+                    $("#task-list-body").html(html);
+                });
+        }
+
+        // 初始化
+        if(localStorage.getItem("auth_token")) {
+            $("#login-overlay").hide();
+            loadAccounts();
+        }
+    </script>
 </body>
 </html>
