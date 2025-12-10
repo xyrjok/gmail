@@ -90,10 +90,12 @@
         /* 表格特定样式：API配置列 */
         .api-config-cell {
             font-size: 0.75rem;
-            max-width: 180px;
-            word-break: break-all;
-            white-space: pre-wrap;
+            max-width: 180px;       /* 限制最大宽度 */
+            white-space: nowrap;    /* 强制不换行 */
+            overflow: hidden;       /* 隐藏超出部分 */
+            text-overflow: ellipsis;/* 超出部分显示省略号 */
             color: #666;
+            display: block;         /* 块级显示，确保 max-width 生效 */
         }
         /* 表格特定样式：GAS URL列 */
         .gas-url-cell {
@@ -554,7 +556,9 @@
                     <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
                     <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')">${acc.name}</td>
                     <td class="cursor-pointer" onclick="copyText('${acc.alias}')">${acc.alias || '-'}</td>
-                    <td class="api-config-cell cursor-pointer" onclick="copyText('${acc.client_id},${acc.client_secret},${acc.refresh_token}')" title="点击复制">${apiDisplay}</td>
+                    <td class="cursor-pointer" onclick="copyText('${acc.client_id},${acc.client_secret},${acc.refresh_token}')" title="点击复制">
+                        <div class="api-config-cell">${apiDisplay}</div>
+                    </td>
                     <td>${gasDisplay}</td>
                     <td><span class="badge ${badgeClass}">${acc.type}</span></td>
                     <td>${statusSwitch}</td>
