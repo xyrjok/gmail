@@ -45,13 +45,26 @@
             border: none;
             padding: 1rem 1.5rem;
         }
-        #sidebar-wrapper .list-group-item:hover, .list-group-item.active {
-            background-color: rgba(255,255,255,0.1);
-            color: #fff;
+        
+        /* 修改点：侧边栏选中状态改为灰色 (与鼠标悬停一致)，覆盖 Bootstrap 默认蓝色 */
+        #sidebar-wrapper .list-group-item:hover, #sidebar-wrapper .list-group-item.active {
+            background-color: rgba(255,255,255,0.1) !important;
+            color: #fff !important;
+            border-color: transparent !important;
         }
+        
         #page-content-wrapper { width: 100%; padding-left: var(--sidebar-width); }
         .content-section { display: none; padding: 20px; }
         .content-section.active { display: block; }
+
+        /* 修改点：页面右边标题改小 */
+        .content-section h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem !important;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
         
         /* 收件箱分栏 */
         .split-view { display: flex; height: calc(100vh - 60px); }
@@ -74,6 +87,15 @@
             text-overflow: ellipsis;
             display: inline-block;
             vertical-align: middle;
+        }
+        
+        /* 修改点：优化 API 配置列的显示，防止内容过长撑爆表格 */
+        .api-config-cell {
+            font-size: 0.75rem;
+            max-width: 200px;
+            word-break: break-all;
+            white-space: pre-wrap;
+            color: #666;
         }
         
         .cursor-pointer { cursor: pointer; }
@@ -145,13 +167,15 @@
                                 <button class="btn btn-sm btn-outline-secondary" onclick="exportAccounts()"><i class="fas fa-file-export"></i> 批量导出</button>
                             </div>
                         </div>
-                        <table class="table table-hover table-sm">
+                        
+                        <table class="table table-hover table-sm align-middle">
                             <thead>
                                 <tr>
                                     <th><input type="checkbox" id="check-all-acc" onchange="toggleAll('acc')"></th>
                                     <th>名称</th>
                                     <th>别名</th>
-                                    <th>Api/Script URL</th>
+                                    <th style="width: 25%">API 配置 (ID/Secret/Token)</th>
+                                    <th style="width: 20%">GAS URL</th>
                                     <th>类型</th>
                                     <th>状态</th>
                                     <th>操作</th>
@@ -474,12 +498,42 @@
                             <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
                         </div>`;
                         
+                        // --- 修改点：处理 API 和 GAS 的显示内容 ---
+                        let apiDisplay = '-';
+                        let gasDisplay = '-';
+
+                        if (acc.type === 'API') {
+                            if (acc.client_id) {
+                                // 如果有详细 Auth 信息则显示
+                                apiDisplay = `
+                                    <div><strong>ID:</strong> ${acc.client_id}</div>
+                                    <div><strong>Secret:</strong> ${acc.client_secret ? '******' : '-'}</div>
+                                    <div class="text-truncate" style="max-width:150px" title="${acc.refresh_token}"><strong>Token:</strong> ${acc.refresh_token}</div>
+                                `;
+                            } else {
+                                // 兼容旧数据或直接存储在 script_url 的情况
+                                apiDisplay = `<span class="text-muted">见 GAS URL 或无数据</span>`;
+                            }
+                        }
+
+                        if (acc.type === 'GAS') {
+                            gasDisplay = `<span class="text-truncate-cell" title="${acc.script_url}" onclick="copyText('${acc.script_url}')">${acc.script_url}</span>`;
+                        } else if (acc.type === 'API' && !acc.script_url.includes('Using DB Auth')) {
+                             // 如果 API 模式下 script_url 存的是旧的长串 token，也可以显示在这里
+                             gasDisplay = `<span class="text-truncate-cell text-muted" title="${acc.script_url}">...</span>`;
+                        }
+                        // ---------------------------------------
+
                         html += `<tr>
                             <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
-                            <td class="cursor-pointer" onclick="copyText('${acc.name}')" title="点击复制">${acc.name}</td>
-                            <td class="cursor-pointer" onclick="copyText('${acc.alias}')" title="点击复制">${acc.alias || '-'}</td>
-                            <td class="cursor-pointer" onclick="copyText('${acc.script_url}')" title="点击复制"><span class="text-truncate-cell">${acc.script_url || '-'}</span></td>
-                            <td><span class="badge bg-secondary">${acc.type}</span></td>
+                            <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')">${acc.name}</td>
+                            <td class="cursor-pointer" onclick="copyText('${acc.alias}')">${acc.alias || '-'}</td>
+                            
+                            <td class="api-config-cell">${apiDisplay}</td>
+                            
+                            <td>${gasDisplay}</td>
+                            
+                            <td><span class="badge ${acc.type==='API'?'bg-success':'bg-primary'}">${acc.type}</span></td>
                             <td>${statusSwitch}</td>
                             <td>
                                 <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditModal(${acc.id})"><i class="fas fa-edit"></i></button> 
@@ -607,6 +661,17 @@
                     let html = '';
                     data.forEach(task => {
                         let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
+                        
+                        // --- 修改点：状态汉化映射 ---
+                        const statusMap = {
+                            'pending': '等待中',
+                            'success': '成功',
+                            'error': '失败',
+                            'running': '运行中'
+                        };
+                        const statusText = statusMap[task.status] || task.status;
+                        // -----------------------
+                        
                         const acc = cachedAccounts.find(a => a.id == task.account_id);
                         const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
                         const loopSwitch = `
@@ -620,7 +685,7 @@
                             <td><span class="text-truncate-cell" title="${task.subject||''}">${task.subject || '-'}</span></td>
                             <td>${new Date(task.next_run_at).toLocaleString()}</td>
                             <td>${loopSwitch}</td>
-                            <td class="${statusColor}">${task.status}</td>
+                            <td class="${statusColor} fw-bold">${statusText}</td>
                             <td>
                                 <button class="btn btn-sm btn-outline-primary py-0" title="执行" onclick="manualRun(${task.id})"><i class="fas fa-play"></i></button>
                                 <button class="btn btn-sm btn-outline-secondary py-0" title="编辑" onclick="editTask(${task.id})"><i class="fas fa-edit"></i></button>
