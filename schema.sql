@@ -3,12 +3,11 @@ CREATE TABLE IF NOT EXISTS accounts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
     alias       TEXT,
-    type        TEXT CHECK(type IN ('GAS', 'API')) NOT NULL,
-    script_url  TEXT, -- GAS的Web App URL 或 API的Token信息
-    config_json TEXT, -- 存储API相关的额外配置 (Client ID/Secret/Token)
-    status      INTEGER DEFAULT 1 -- 1启用 0禁用
+    type        TEXT CHECK(type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
+    script_url  TEXT,
+    config_json TEXT,
+    status      INTEGER DEFAULT 1
 );
-
 
 -- 2. 邮件发送任务表 (核心循环逻辑)
 CREATE TABLE IF NOT EXISTS send_tasks (
@@ -16,16 +15,15 @@ CREATE TABLE IF NOT EXISTS send_tasks (
     account_id      INTEGER,
     to_email        TEXT NOT NULL,
     content         TEXT,
-    schedule_type   TEXT, -- 'fixed' (固定时间) 或 'dynamic' (动态计算)
-    base_date       DATETIME, -- A框: 基础日期
-    delay_config    TEXT, -- B框: 延迟规则 (例如 "10-20")
-    next_run_at     INTEGER, -- 下次运行的时间戳
-    is_loop         INTEGER DEFAULT 0, -- 是否循环
-    status          TEXT DEFAULT 'pending', -- pending, success, failed
+    schedule_type   TEXT,
+    base_date       DATETIME,
+    delay_config    TEXT,
+    next_run_at     INTEGER,
+    is_loop         INTEGER DEFAULT 0,
+    status          TEXT DEFAULT 'pending',
     execution_mode  TEXT DEFAULT 'AUTO',
     subject         TEXT
 );
-
 
 -- 3. 收件箱 (简单存储)
 CREATE TABLE IF NOT EXISTS received_emails (
