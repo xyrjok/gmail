@@ -34,6 +34,6 @@ CREATE TABLE IF NOT EXISTS received_emails (
     sender      TEXT,
     subject     TEXT,
     body        TEXT,
-    received_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id_str      TEXT
 );
-
