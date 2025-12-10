@@ -37,3 +37,12 @@ CREATE TABLE IF NOT EXISTS received_emails (
     received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     id_str      TEXT
 );
+
+-- 创建独立的认证信息表
+CREATE TABLE IF NOT EXISTS account_auth (
+    account_id INTEGER PRIMARY KEY,
+    client_id TEXT,
+    client_secret TEXT,
+    refresh_token TEXT,
+    updated_at INTEGER
+);
