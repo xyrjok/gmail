@@ -1,6 +1,15 @@
 /**
  * worker.js
- * 绑定变量: DB (D1 Database), ADMIN_USERNAME, ADMIN_PASSWORD
+ * * 绑定变量: 
+ * - DB (D1 Database)
+ * - ADMIN_USERNAME
+ * - ADMIN_PASSWORD
+ * * 数据库变动:
+ * 1. 需要 accounts 表 (原有)
+ * 2. 需要 send_tasks 表 (原有)
+ * 3. 需要 received_emails 表 (原有)
+ * 4. [新增] 需要 account_auth 表 (用于存储每个账号独立的 OAuth 凭证)
+ * SQL: CREATE TABLE IF NOT EXISTS account_auth (account_id INTEGER PRIMARY KEY, client_id TEXT, client_secret TEXT, refresh_token TEXT, updated_at INTEGER);
  */
 
 export default {
@@ -64,17 +73,58 @@ function calculateDelay(configStr) {
     return days * 24 * 60 * 60 * 1000; 
 }
 
+// [核心] 获取账号的 OAuth 凭证 (从 account_auth 表)
+async function getAccountAuth(env, accountId) {
+    return await env.DB.prepare("SELECT * FROM account_auth WHERE account_id = ?").bind(accountId).first();
+}
+
+// [核心] 使用独立的 ID/Secret 换取 Access Token
+async function getAccessToken(authData) {
+    if (!authData || !authData.refresh_token) {
+        throw new Error("Missing Refresh Token");
+    }
+    // 如果没有 ID/Secret，说明可能是旧数据，直接返回 token 试一试（兼容性）
+    if (!authData.client_id || !authData.client_secret) {
+        console.warn("Missing Client ID/Secret for account, trying raw refresh token as access token.");
+        return authData.refresh_token; 
+    }
+
+    try {
+        const params = new URLSearchParams();
+        params.append('client_id', authData.client_id);
+        params.append('client_secret', authData.client_secret);
+        params.append('refresh_token', authData.refresh_token);
+        params.append('grant_type', 'refresh_token');
+
+        const resp = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        });
+
+        if (!resp.ok) {
+            const errText = await resp.text();
+            throw new Error(`OAuth2 Refresh Failed: ${resp.status} - ${errText}`);
+        }
+
+        const data = await resp.json();
+        return data.access_token;
+    } catch (e) {
+        console.error("Token refresh failed:", e.message);
+        throw e; 
+    }
+}
+
 // --- 核心业务逻辑 ---
 
-// 1. 发送邮件核心函数
-async function executeSendEmail(account, toEmail, subject, content) {
-    // 默认值处理
+// 1. 发送邮件核心函数 (已修复: 增加 env 参数)
+async function executeSendEmail(env, account, toEmail, subject, content) {
     const finalSubject = subject ? subject : "Remind";
     const finalContent = content ? content : "Reminder of current time: " + new Date().toUTCString();
 
     try {
         if (account.type === 'GAS') {
-            // === URL 智能修正逻辑 ===
+            // === GAS 模式 (保持原有逻辑) ===
             let scriptUrl = account.script_url.trim();
             if (scriptUrl.includes('?')) {
                 if (!scriptUrl.endsWith('&')) scriptUrl += '&';
@@ -82,7 +132,6 @@ async function executeSendEmail(account, toEmail, subject, content) {
                 scriptUrl += '?';
             }
 
-            // === 发送表单数据 ===
             const params = new URLSearchParams();
             params.append('action', 'send'); 
             params.append('to', toEmail);
@@ -91,36 +140,24 @@ async function executeSendEmail(account, toEmail, subject, content) {
 
             const resp = await fetch(scriptUrl, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/x-www-form-urlencoded' 
-                },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: params.toString()
             });
             
             const text = await resp.text();
             
-            // HTTP 状态检查
             if (!resp.ok) throw new Error(`GAS HTTP Error: ${resp.status}`);
+            if (text.trim().startsWith("<")) throw new Error("GAS返回了HTML。请检查URL是否正确");
             
-            // HTML 返回检查
-            if (text.trim().startsWith("<")) {
-                throw new Error("GAS返回了HTML。请检查：1.部署权限是否为'任何人'; 2.URL是否正确");
-            }
-            
-            // JSON/文本 逻辑检查
+            // 简单的成功检查
+            if (text.includes("OK") || text.includes("Sent") || text.includes("成功")) return { success: true };
             try {
-                if (text.includes("OK") || text.includes("Sent") || text.includes("成功")) {
-                    return { success: true };
-                }
-
                 const json = JSON.parse(text);
-                if (json.result === 'success' || json.status === 'success') {
-                    return { success: true };
-                } else {
-                    throw new Error(`GAS Refused: ${json.message || json.error || '未知错误'}`);
-                }
+                if (json.result === 'success' || json.status === 'success') return { success: true };
+                else throw new Error(`GAS Refused: ${json.message || json.error || '未知错误'}`);
             } catch (e) {
-                if (!text.includes("OK") && !text.includes("Sent") && !text.includes("成功")) {
+                // 非JSON但包含特定关键字也算成功
+                if (!text.includes("OK") && !text.includes("Sent")) {
                     if (e.message.startsWith("GAS Refused")) throw e;
                     throw new Error(`GAS Response Invalid: ${text.substring(0, 50)}...`);
                 }
@@ -128,7 +165,18 @@ async function executeSendEmail(account, toEmail, subject, content) {
             }
 
         } else if (account.type === 'API') {
-            const token = account.script_url; 
+            // === API 模式 (使用独立鉴权) ===
+            
+            // 1. 获取该账号的授权信息
+            const authData = await getAccountAuth(env, account.id);
+            if (!authData) {
+                throw new Error("No Auth Data found. Please edit account and enter 'ClientID,Secret,RefreshToken'");
+            }
+            
+            // 2. 换取 Access Token
+            const accessToken = await getAccessToken(authData);
+
+            // 3. 构建邮件内容
             const emailLines = [];
             emailLines.push(`To: ${toEmail}`);
             emailLines.push(`Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(finalSubject)))}?=`);
@@ -136,16 +184,16 @@ async function executeSendEmail(account, toEmail, subject, content) {
             emailLines.push(``);
             emailLines.push(finalContent);
             
-            const emailBody = emailLines.join('\r\n');
-            const raw = btoa(unescape(encodeURIComponent(emailBody)))
+            const raw = btoa(unescape(encodeURIComponent(emailLines.join('\r\n'))))
                         .replace(/\+/g, '-')
                         .replace(/\//g, '_')
                         .replace(/=+$/, '');
 
+            // 4. 发送请求
             const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/send`, {
                 method: 'POST',
                 headers: { 
-                    'Authorization': `Bearer ${token}`,
+                    'Authorization': `Bearer ${accessToken}`, 
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ raw: raw })
@@ -168,6 +216,7 @@ async function findBestAccount(env, referenceAccountId, mode) {
     const refAccount = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(referenceAccountId).first();
     if (!refAccount) throw new Error("Reference account not found");
 
+    // 查找同名账号 (Load Balancing 基础)
     const { results: allAccounts } = await env.DB.prepare("SELECT * FROM accounts WHERE name = ? AND status = 1").bind(refAccount.name).all();
     
     let targetAccount = null;
@@ -179,7 +228,7 @@ async function findBestAccount(env, referenceAccountId, mode) {
         targetAccount = allAccounts.find(a => a.type === 'GAS');
         if (!targetAccount) throw new Error(`No GAS account found for ${refAccount.name}`);
     } else {
-        // AUTO: 优先 API
+        // AUTO: 优先 API，其次 GAS
         targetAccount = allAccounts.find(a => a.type === 'API');
         if (!targetAccount) {
             targetAccount = allAccounts.find(a => a.type === 'GAS');
@@ -190,14 +239,14 @@ async function findBestAccount(env, referenceAccountId, mode) {
     return targetAccount;
 }
 
-// 3. [新增] 兼容型邮件同步函数 (支持 API 和 GAS 双模式)
+// 3. 邮件同步函数 (自动根据账号类型选择 GAS 或 API)
 async function syncEmails(env, accountId) {
     const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(accountId).first();
     if (!account) throw new Error("Account not found");
 
     let messages = [];
 
-    // === GAS 模式处理 ===
+    // === GAS 模式 ===
     if (account.type === 'GAS') {
         let scriptUrl = account.script_url.trim();
         if (scriptUrl.includes('?')) {
@@ -207,17 +256,11 @@ async function syncEmails(env, accountId) {
         }
 
         const params = new URLSearchParams();
-        // 优先使用 'sync_inbox'，脚本不支持时会报错或回退（取决于脚本写法）
-        // 为了兼容旧脚本习惯，也可以发 'get'，或者两个都发看脚本识别哪个
-        // 这里使用 'sync_inbox' 以配合新脚本，如果新脚本兼容了 'get' 也可以改成 'get'
         params.append('action', 'get'); 
         params.append('limit', '5');
         
-        // 自动补全 Token (如果 URL 里没带)
-        // 假设您的 Token 是 123456，您可以硬编码在这里，或者从其他字段读取
-        if (!scriptUrl.includes('token=')) {
-             params.append('token', '123456'); 
-        }
+        // 自动补全 Token
+        if (!scriptUrl.includes('token=')) params.append('token', '123456'); 
 
         const resp = await fetch(scriptUrl, {
             method: 'POST',
@@ -229,21 +272,12 @@ async function syncEmails(env, accountId) {
         
         const text = await resp.text();
         let json;
-        try {
-            json = JSON.parse(text);
-        } catch (e) {
-            throw new Error("GAS Response Invalid JSON: " + text.substring(0, 50));
-        }
+        try { json = JSON.parse(text); } catch (e) { throw new Error("GAS Response Invalid JSON: " + text.substring(0, 50)); }
 
-        // --- 核心转换逻辑 ---
-        
-        // 情况 A: 脚本返回旧版数组 [ {"from":...}, ... ]
         if (Array.isArray(json)) {
             messages = json.map(item => {
-                // 生成虚拟 ID (gas_时间戳_主题前10位Base64)
                 const dateTs = new Date(item.date).getTime();
                 const fakeId = 'gas_' + dateTs + '_' + btoa(encodeURIComponent(item.subject || '')).substring(0, 10);
-                
                 return {
                     id_str: fakeId,
                     sender: item.from,
@@ -253,28 +287,29 @@ async function syncEmails(env, accountId) {
                 };
             });
         } 
-        // 情况 B: 脚本返回新版对象 { status: 'success', data: [...] }
         else if (json.status === 'success' && Array.isArray(json.data)) {
-            messages = json.data.map(item => {
-                // 如果 data 里有些字段名是旧的 (from/snippet)，也兼容一下
-                return {
-                    id_str: item.id_str || ('gas_' + new Date(item.date).getTime()),
-                    sender: item.sender || item.from,
-                    subject: item.subject,
-                    body: item.body || item.snippet,
-                    date: item.date
-                };
-            });
+            messages = json.data.map(item => ({
+                id_str: item.id_str || ('gas_' + new Date(item.date).getTime()),
+                sender: item.sender || item.from,
+                subject: item.subject,
+                body: item.body || item.snippet,
+                date: item.date
+            }));
         }
         else if (json.status === 'error') {
             throw new Error("GAS Error: " + json.message);
         }
+
     } 
-    // === API 模式处理 ===
+    // === API 模式 (自动调用) ===
     else if (account.type === 'API') {
-        const token = account.script_url;
+        const authData = await getAccountAuth(env, account.id);
+        if (!authData) throw new Error("No Auth Data found");
+
+        const accessToken = await getAccessToken(authData);
+
         const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5`, {
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         if (!listResp.ok) throw new Error("Gmail API List Failed: " + listResp.status);
         const listData = await listResp.json();
@@ -282,7 +317,7 @@ async function syncEmails(env, accountId) {
         if (listData.messages) {
             for (const msgItem of listData.messages) {
                 const detailResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgItem.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
                 });
                 if (detailResp.ok) {
                     const detail = await detailResp.json();
@@ -310,7 +345,6 @@ async function syncEmails(env, accountId) {
     
     let syncCount = 0;
     for (const msg of messages) {
-        // 查重 (防止重复收取)
         const exists = await env.DB.prepare("SELECT id FROM received_emails WHERE id_str = ?").bind(msg.id_str).first();
         if (exists) continue;
 
@@ -327,6 +361,33 @@ async function syncEmails(env, accountId) {
 
 // --- 路由处理 ---
 
+async function saveAuthInfo(env, accountId, rawInput) {
+    if (rawInput && rawInput.includes(',')) {
+        const parts = rawInput.split(',').map(s => s.trim());
+        if (parts.length >= 3) {
+            const [clientId, clientSecret, refreshToken] = parts;
+            await env.DB.prepare(`
+                INSERT INTO account_auth (account_id, client_id, client_secret, refresh_token, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(account_id) DO UPDATE SET
+                client_id=excluded.client_id,
+                client_secret=excluded.client_secret,
+                refresh_token=excluded.refresh_token,
+                updated_at=excluded.updated_at
+            `).bind(accountId, clientId, clientSecret, refreshToken, Date.now()).run();
+            return true;
+        }
+    }
+    if (rawInput && rawInput.length > 20) {
+         await env.DB.prepare(`
+            INSERT INTO account_auth (account_id, refresh_token, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(account_id) DO UPDATE SET refresh_token=excluded.refresh_token
+        `).bind(accountId, rawInput, Date.now()).run();
+    }
+    return false;
+}
+
 async function handleAccounts(req, env) {
   const method = req.method;
   const url = new URL(req.url);
@@ -338,22 +399,30 @@ async function handleAccounts(req, env) {
   
   if (method === 'POST') {
     const data = await req.json();
-    if (Array.isArray(data)) {
-        const stmt = env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?)");
-        const batch = data.map(acc => stmt.bind(acc.name, acc.alias, acc.type, acc.script_url, acc.status ? 1 : 0));
-        await env.DB.batch(batch);
-        return new Response(JSON.stringify({ ok: true, count: data.length }), { headers: corsHeaders() });
+    const storedUrl = (data.type === 'API' && data.script_url.includes(',')) 
+        ? 'Using DB Auth (Secure)' 
+        : data.script_url;
+
+    const res = await env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?) RETURNING id")
+      .bind(data.name, data.alias, data.type, storedUrl, data.status ? 1 : 0).first();
+            
+    if (data.type === 'API') {
+        await saveAuthInfo(env, res.id, data.script_url);
     }
-    
-    await env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?)")
-      .bind(data.name, data.alias, data.type, data.script_url, data.status ? 1 : 0).run();
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
 
   if (method === 'PUT') {
     const data = await req.json();
+    const isUpdatingAuth = (data.type === 'API' && data.script_url.includes(','));
+    const storedUrl = isUpdatingAuth ? 'Using DB Auth (Updated)' : data.script_url;
+
     await env.DB.prepare("UPDATE accounts SET name=?, alias=?, type=?, script_url=?, status=? WHERE id=?")
-      .bind(data.name, data.alias, data.type, data.script_url, data.status ? 1 : 0, data.id).run();
+      .bind(data.name, data.alias, data.type, storedUrl, data.status ? 1 : 0, data.id).run();
+    
+    if (data.type === 'API') {
+        await saveAuthInfo(env, data.id, data.script_url);
+    }
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
 
@@ -363,10 +432,15 @@ async function handleAccounts(req, env) {
     
     if (ids) {
         const idList = ids.split(',').map(Number);
-        const stmt = env.DB.prepare("DELETE FROM accounts WHERE id = ?");
-        await env.DB.batch(idList.map(i => stmt.bind(i)));
+        await env.DB.batch([
+            env.DB.prepare(`DELETE FROM accounts WHERE id IN (${ids})`),
+            env.DB.prepare(`DELETE FROM account_auth WHERE account_id IN (${ids})`)
+        ]);
     } else if (id) {
-        await env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id).run();
+        await env.DB.batch([
+            env.DB.prepare("DELETE FROM accounts WHERE id = ?").bind(id),
+            env.DB.prepare("DELETE FROM account_auth WHERE account_id = ?").bind(id)
+        ]);
     }
     return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
@@ -401,7 +475,8 @@ async function handleTasks(req, env) {
     if (data.immediate) {
         try {
             const account = await findBestAccount(env, data.account_id, mode);
-            const result = await executeSendEmail(account, data.to_email, data.subject, data.content);
+            // [修复点] 传递 env
+            const result = await executeSendEmail(env, account, data.to_email, data.subject, data.content);
             return new Response(JSON.stringify({ ok: result.success, error: result.error }), { headers: corsHeaders() });
         } catch (e) {
             return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
@@ -429,7 +504,8 @@ async function handleTasks(req, env) {
               try {
                   const mode = task.execution_mode || 'AUTO';
                   const account = await findBestAccount(env, task.account_id, mode);
-                  const res = await executeSendEmail(account, task.to_email, task.subject, task.content);
+                  // [修复点] 传递 env
+                  const res = await executeSendEmail(env, account, task.to_email, task.subject, task.content);
                   
                   if (res.success) {
                        await env.DB.prepare("UPDATE send_tasks SET status = 'success' WHERE id = ?").bind(task.id).run();
@@ -477,19 +553,16 @@ async function handleTasks(req, env) {
   return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
 }
 
-// 4. [修改后] 支持 POST 同步的 handleEmails
 async function handleEmails(req, env) {
    const url = new URL(req.url);
    const method = req.method;
 
-   // === A. POST 请求: 触发同步 (收取邮件) ===
    if (method === 'POST') {
        try {
            const data = await req.json();
            const accountId = data.account_id;
            if (!accountId) throw new Error("Missing account_id");
-
-           // 调用同步函数
+           // syncEmails 已经有 env，且能自动处理 API 和 GAS
            const count = await syncEmails(env, accountId);
            return new Response(JSON.stringify({ ok: true, count: count }), { headers: corsHeaders() });
        } catch (e) {
@@ -497,10 +570,9 @@ async function handleEmails(req, env) {
        }
    }
    
-   // === B. GET 请求: 读取数据库 ===
    if (method === 'GET') {
        let limit = parseInt(url.searchParams.get('limit'));
-       if (!limit || limit <= 0) limit = 20; // 默认读取20条
+       if (!limit || limit <= 0) limit = 20; 
        
        const accountId = url.searchParams.get('account_id');
 
@@ -528,7 +600,8 @@ async function processScheduledTasks(env) {
         try {
             const mode = task.execution_mode || 'AUTO';
             const account = await findBestAccount(env, task.account_id, mode);
-            const res = await executeSendEmail(account, task.to_email, task.subject, task.content);
+            // [修复点] 传递 env
+            const res = await executeSendEmail(env, account, task.to_email, task.subject, task.content);
             
             if(!res.success) {
                  await env.DB.prepare("UPDATE send_tasks SET status = 'error' WHERE id = ?").bind(task.id).run();
