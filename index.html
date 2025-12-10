@@ -45,19 +45,17 @@
             border: none;
             padding: 1rem 1.5rem;
         }
-        
-        /* 修改点：侧边栏选中状态改为灰色 (与鼠标悬停一致)，覆盖 Bootstrap 默认蓝色 */
+        /* 侧边栏选中/悬停颜色优化 (灰色半透明) */
         #sidebar-wrapper .list-group-item:hover, #sidebar-wrapper .list-group-item.active {
             background-color: rgba(255,255,255,0.1) !important;
             color: #fff !important;
             border-color: transparent !important;
         }
-        
         #page-content-wrapper { width: 100%; padding-left: var(--sidebar-width); }
         .content-section { display: none; padding: 20px; }
         .content-section.active { display: block; }
 
-        /* 修改点：页面右边标题改小 */
+        /* 标题字体改小 */
         .content-section h3 {
             font-size: 1.25rem;
             font-weight: 600;
@@ -89,13 +87,21 @@
             vertical-align: middle;
         }
         
-        /* 修改点：优化 API 配置列的显示，防止内容过长撑爆表格 */
+        /* 表格特定样式：API配置列 */
         .api-config-cell {
             font-size: 0.75rem;
-            max-width: 200px;
+            max-width: 180px;
             word-break: break-all;
             white-space: pre-wrap;
             color: #666;
+        }
+        /* 表格特定样式：GAS URL列 */
+        .gas-url-cell {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: block;
         }
         
         .cursor-pointer { cursor: pointer; }
@@ -158,9 +164,15 @@
                 <h3 class="mb-4">邮箱管理</h3>
                 <div class="card shadow-sm">
                     <div class="card-body">
-                        <div class="mb-3 d-flex gap-2">
+                        <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
                             <button class="btn btn-sm btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> 添加邮箱</button>
                             <button class="btn btn-sm btn-danger" onclick="batchDelAccounts()"><i class="fas fa-trash"></i> 批量删除</button>
+                            
+                            <div class="input-group input-group-sm ms-2" style="width: 200px;">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" placeholder="搜索名称/别名..." onkeyup="filterAccounts(this.value)">
+                            </div>
+
                             <div class="ms-auto">
                                 <input type="file" id="import-acc-file" style="display:none" onchange="importAccountsFile(this)">
                                 <button class="btn btn-sm btn-outline-secondary" onclick="$('#import-acc-file').click()"><i class="fas fa-file-import"></i> 批量导入</button>
@@ -331,13 +343,23 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="acc-id">
-                    <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名">
-                    <input type="text" class="form-control mb-2" id="acc-alias" placeholder="别名">
-                    <select class="form-select mb-2" id="acc-type">
-                        <option value="GAS">Gmail App (GAS)</option>
-                        <option value="API">Gmail API</option>
-                    </select>
-                    <input type="text" class="form-control mb-2" id="acc-script" placeholder="Script URL 或 Token">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">基本信息</label>
+                        <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名 (唯一)">
+                        <input type="text" class="form-control" id="acc-alias" placeholder="别名 (可选)">
+                    </div>
+                    
+                    <div class="mb-3 p-2 border rounded bg-light">
+                        <label class="form-label small fw-bold mb-1">Gmail API 设置 (可选)</label>
+                        <div class="form-text mb-2" style="font-size:0.75rem">格式: Client ID, Client Secret, Refresh Token (逗号分隔)</div>
+                        <textarea class="form-control" id="acc-api-config" rows="2" placeholder="ID,Secret,Token"></textarea>
+                    </div>
+
+                    <div class="mb-3 p-2 border rounded bg-light">
+                        <label class="form-label small fw-bold mb-1">Gmail App (GAS) 设置 (可选)</label>
+                        <input type="text" class="form-control" id="acc-gas-url" placeholder="https://script.google.com/macros/s/...">
+                    </div>
+
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="acc-status" checked>
                         <label class="form-check-label text-muted">启用</label>
@@ -424,6 +446,7 @@
             const acc = cachedAccounts.find(a => a.id === id);
             if (!acc) return;
             const data = { ...acc, status: isActive };
+            // 更新状态时可能不传 gas_url 等，后端需处理
             fetch(API_BASE + '/api/accounts', { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) })
                 .then(r => r.json()).then(res => {
                     if(res.ok) { showToast(isActive ? "邮箱已启用" : "邮箱已禁用"); acc.status = isActive ? 1 : 0; }
@@ -489,63 +512,69 @@
                 .then(r => r.json())
                 .then(data => {
                     cachedAccounts = data;
-                    let html = '';
-                    let optionsHtml = ''; 
+                    renderAccounts(data); // 使用渲染函数
                     
-                    data.forEach(acc => {
-                        const statusSwitch = `
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
-                        </div>`;
-                        
-                        // --- 修改点：处理 API 和 GAS 的显示内容 ---
-                        let apiDisplay = '-';
-                        let gasDisplay = '-';
-
-                        if (acc.type === 'API') {
-                            if (acc.client_id) {
-                                // 如果有详细 Auth 信息则显示
-                                apiDisplay = `
-                                    <div><strong>ID:</strong> ${acc.client_id}</div>
-                                    <div><strong>Secret:</strong> ${acc.client_secret ? '******' : '-'}</div>
-                                    <div class="text-truncate" style="max-width:150px" title="${acc.refresh_token}"><strong>Token:</strong> ${acc.refresh_token}</div>
-                                `;
-                            } else {
-                                // 兼容旧数据或直接存储在 script_url 的情况
-                                apiDisplay = `<span class="text-muted">见 GAS URL 或无数据</span>`;
-                            }
-                        }
-
-                        if (acc.type === 'GAS') {
-                            gasDisplay = `<span class="text-truncate-cell" title="${acc.script_url}" onclick="copyText('${acc.script_url}')">${acc.script_url}</span>`;
-                        } else if (acc.type === 'API' && !acc.script_url.includes('Using DB Auth')) {
-                             // 如果 API 模式下 script_url 存的是旧的长串 token，也可以显示在这里
-                             gasDisplay = `<span class="text-truncate-cell text-muted" title="${acc.script_url}">...</span>`;
-                        }
-                        // ---------------------------------------
-
-                        html += `<tr>
-                            <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
-                            <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')">${acc.name}</td>
-                            <td class="cursor-pointer" onclick="copyText('${acc.alias}')">${acc.alias || '-'}</td>
-                            
-                            <td class="api-config-cell">${apiDisplay}</td>
-                            
-                            <td>${gasDisplay}</td>
-                            
-                            <td><span class="badge ${acc.type==='API'?'bg-success':'bg-primary'}">${acc.type}</span></td>
-                            <td>${statusSwitch}</td>
-                            <td>
-                                <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditModal(${acc.id})"><i class="fas fa-edit"></i></button> 
-                                <button class="btn btn-sm btn-light text-danger py-0" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button>
-                            </td>
-                        </tr>`;
-                        optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
-                    });
-                    
-                    $("#account-list-body").html(html);
+                    // 填充 Datalist
+                    let optionsHtml = '';
+                    data.forEach(acc => optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`);
                     $("#account-list-options").html(optionsHtml);
                 });
+        }
+
+        // 新增：独立的渲染函数，支持搜索过滤
+        function renderAccounts(data) {
+            let html = '';
+            data.forEach(acc => {
+                const statusSwitch = `
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
+                </div>`;
+                
+                // --- 显示逻辑：双重显示 ---
+                let apiDisplay = '-';
+                if (acc.client_id) {
+                    apiDisplay = `ID:${acc.client_id}, Secret:${acc.client_secret ? '******' : '-'}, Token:${acc.refresh_token}`;
+                } else if (acc.type.includes('API') && !acc.client_id) {
+                     apiDisplay = `<span class="text-muted">无配置或旧数据</span>`;
+                }
+                
+                let gasDisplay = '-';
+                // 只有当 script_url 是 http 开头才认为是 GAS URL
+                if (acc.script_url && acc.script_url.startsWith('http')) {
+                    gasDisplay = `<span class="gas-url-cell cursor-pointer" onclick="copyText('${acc.script_url}')" title="${acc.script_url}">${acc.script_url}</span>`;
+                }
+
+                // 类型徽章逻辑
+                let badgeClass = 'bg-secondary';
+                if (acc.type === 'API') badgeClass = 'bg-success';
+                else if (acc.type === 'GAS') badgeClass = 'bg-primary';
+                else if (acc.type === 'API/GAS') badgeClass = 'bg-info text-dark';
+
+                html += `<tr>
+                    <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
+                    <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')">${acc.name}</td>
+                    <td class="cursor-pointer" onclick="copyText('${acc.alias}')">${acc.alias || '-'}</td>
+                    <td class="api-config-cell cursor-pointer" onclick="copyText('${acc.client_id},${acc.client_secret},${acc.refresh_token}')" title="点击复制">${apiDisplay}</td>
+                    <td>${gasDisplay}</td>
+                    <td><span class="badge ${badgeClass}">${acc.type}</span></td>
+                    <td>${statusSwitch}</td>
+                    <td>
+                        <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditModal(${acc.id})"><i class="fas fa-edit"></i></button> 
+                        <button class="btn btn-sm btn-light text-danger py-0" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            $("#account-list-body").html(html);
+        }
+        
+        // 新增：前端搜索过滤
+        function filterAccounts(text) {
+            text = text.toLowerCase();
+            const filtered = cachedAccounts.filter(acc => 
+                acc.name.toLowerCase().includes(text) || 
+                (acc.alias && acc.alias.toLowerCase().includes(text))
+            );
+            renderAccounts(filtered);
         }
 
         function batchDelAccounts() {
@@ -574,13 +603,18 @@
             reader.onload = function(e) {
                 try {
                     const json = JSON.parse(e.target.result);
+                    // 发送给后端处理查重和导入
                     fetch(API_BASE + '/api/accounts', {
                         method: 'POST',
                         headers: getHeaders(),
                         body: JSON.stringify(json)
                     }).then(r => r.json()).then(res => {
-                        showToast(`导入成功 ${res.count || ''} 条`);
-                        loadAccounts();
+                        if (res.ok) {
+                            alert(`导入完成！\n成功导入: ${res.imported} 条\n跳过已存在: ${res.skipped} 条`);
+                            loadAccounts();
+                        } else {
+                            showToast("导入失败: " + res.error);
+                        }
                     });
                 } catch(err) {
                     showToast("文件格式错误");
@@ -662,7 +696,7 @@
                     data.forEach(task => {
                         let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
                         
-                        // --- 修改点：状态汉化映射 ---
+                        // 状态汉化
                         const statusMap = {
                             'pending': '等待中',
                             'success': '成功',
@@ -670,7 +704,6 @@
                             'running': '运行中'
                         };
                         const statusText = statusMap[task.status] || task.status;
-                        // -----------------------
                         
                         const acc = cachedAccounts.find(a => a.id == task.account_id);
                         const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
@@ -782,11 +815,12 @@
             $("#acc-id").val(""); 
             $("#acc-name").val("");
             $("#acc-alias").val("");
-            $("#acc-script").val("");
-            $("#acc-type").val("GAS");
+            $("#acc-api-config").val(""); 
+            $("#acc-gas-url").val("");
             $("#acc-status").prop("checked", true);
             new bootstrap.Modal(document.getElementById('addAccountModal')).show();
         }
+
         function openEditModal(id) {
             const acc = cachedAccounts.find(a => a.id === id);
             if(!acc) return;
@@ -794,26 +828,51 @@
             $("#acc-id").val(acc.id);
             $("#acc-name").val(acc.name);
             $("#acc-alias").val(acc.alias);
-            $("#acc-script").val(acc.script_url);
-            $("#acc-type").val(acc.type);
+            
+            // 填充 API Config
+            if (acc.client_id) {
+                $("#acc-api-config").val(`${acc.client_id},${acc.client_secret},${acc.refresh_token}`);
+            } else {
+                $("#acc-api-config").val("");
+            }
+            
+            // 填充 GAS URL
+            // 注意：script_url 可能被用作 API token 的旧存储位置，所以需要判断是否是 http 开头
+            $("#acc-gas-url").val(acc.script_url && acc.script_url.startsWith('http') ? acc.script_url : "");
+            
             $("#acc-status").prop("checked", acc.status == 1);
             new bootstrap.Modal(document.getElementById('addAccountModal')).show();
         }
+
         function saveAccount() {
             const id = $("#acc-id").val();
             const data = {
                 name: $("#acc-name").val(),
                 alias: $("#acc-alias").val(),
-                type: $("#acc-type").val(),
-                script_url: $("#acc-script").val(),
+                api_config: $("#acc-api-config").val(), // 使用新字段
+                gas_url: $("#acc-gas-url").val(),       // 使用新字段
                 status: $("#acc-status").is(":checked")
             };
+            
+            // 简单校验
+            if (!data.api_config && !data.gas_url) {
+                showToast("请至少填写 API 配置或 GAS URL 其中一项");
+                return;
+            }
+
             const method = id ? 'PUT' : 'POST';
             if(id) data.id = id;
+            
             fetch(API_BASE + '/api/accounts', { method, headers: getHeaders(), body: JSON.stringify(data) })
-            .then(() => {
-                bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
-                loadAccounts();
+            .then(r => r.json())
+            .then(res => {
+                if (res.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
+                    showToast(id ? "更新成功" : "添加成功");
+                    loadAccounts();
+                } else {
+                    alert("错误: " + res.error); // 弹出错误（如邮箱已存在）
+                }
             });
         }
         function delAccount(id) {
@@ -944,15 +1003,17 @@
             }
         }
 
-        // 修改版：紧凑 + 序号 + 类型标签 + 隐藏别名
+        // 修改版：紧凑 + 序号 + 类型标签
         function renderInboxAccounts(accounts) {
             let html = '';
             let index = 1; 
             
             accounts.forEach(acc => {
                 if (acc.status) {
-                    // 类型标签颜色区分: API为绿色, GAS为蓝色
-                    let badgeColor = acc.type === 'API' ? 'bg-success' : 'bg-primary';
+                    let badgeColor = 'bg-secondary';
+                    if (acc.type === 'API') badgeColor = 'bg-success';
+                    else if (acc.type === 'GAS') badgeColor = 'bg-primary';
+                    else if (acc.type === 'API/GAS') badgeColor = 'bg-info text-dark';
                     
                     html += `<a href="#" class="list-group-item list-group-item-action py-2" onclick="selectAccount(${acc.id}, this)">
                         <div class="d-flex align-items-center justify-content-between">
