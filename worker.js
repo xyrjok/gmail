@@ -66,7 +66,7 @@ function calculateDelay(configStr) {
 
 // --- 核心业务逻辑 ---
 
-// 1. 发送邮件核心函数 (合并版：支持 Subject/DefaultContent + GAS 表单模式)
+// 1. 发送邮件核心函数
 async function executeSendEmail(account, toEmail, subject, content) {
     // 默认值处理
     const finalSubject = subject ? subject : "Remind";
@@ -82,7 +82,7 @@ async function executeSendEmail(account, toEmail, subject, content) {
                 scriptUrl += '?';
             }
 
-            // === 改用 URLSearchParams 发送表单数据 ===
+            // === 发送表单数据 ===
             const params = new URLSearchParams();
             params.append('action', 'send'); 
             params.append('to', toEmail);
@@ -190,6 +190,141 @@ async function findBestAccount(env, referenceAccountId, mode) {
     return targetAccount;
 }
 
+// 3. [新增] 兼容型邮件同步函数 (支持 API 和 GAS 双模式)
+async function syncEmails(env, accountId) {
+    const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(accountId).first();
+    if (!account) throw new Error("Account not found");
+
+    let messages = [];
+
+    // === GAS 模式处理 ===
+    if (account.type === 'GAS') {
+        let scriptUrl = account.script_url.trim();
+        if (scriptUrl.includes('?')) {
+             if (!scriptUrl.endsWith('&')) scriptUrl += '&';
+        } else {
+             scriptUrl += '?';
+        }
+
+        const params = new URLSearchParams();
+        // 优先使用 'sync_inbox'，脚本不支持时会报错或回退（取决于脚本写法）
+        // 为了兼容旧脚本习惯，也可以发 'get'，或者两个都发看脚本识别哪个
+        // 这里使用 'sync_inbox' 以配合新脚本，如果新脚本兼容了 'get' 也可以改成 'get'
+        params.append('action', 'get'); 
+        params.append('limit', '5');
+        
+        // 自动补全 Token (如果 URL 里没带)
+        // 假设您的 Token 是 123456，您可以硬编码在这里，或者从其他字段读取
+        if (!scriptUrl.includes('token=')) {
+             params.append('token', '123456'); 
+        }
+
+        const resp = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        });
+
+        if (!resp.ok) throw new Error("GAS Network Error: " + resp.status);
+        
+        const text = await resp.text();
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (e) {
+            throw new Error("GAS Response Invalid JSON: " + text.substring(0, 50));
+        }
+
+        // --- 核心转换逻辑 ---
+        
+        // 情况 A: 脚本返回旧版数组 [ {"from":...}, ... ]
+        if (Array.isArray(json)) {
+            messages = json.map(item => {
+                // 生成虚拟 ID (gas_时间戳_主题前10位Base64)
+                const dateTs = new Date(item.date).getTime();
+                const fakeId = 'gas_' + dateTs + '_' + btoa(encodeURIComponent(item.subject || '')).substring(0, 10);
+                
+                return {
+                    id_str: fakeId,
+                    sender: item.from,
+                    subject: item.subject,
+                    body: item.snippet,
+                    date: dateTs
+                };
+            });
+        } 
+        // 情况 B: 脚本返回新版对象 { status: 'success', data: [...] }
+        else if (json.status === 'success' && Array.isArray(json.data)) {
+            messages = json.data.map(item => {
+                // 如果 data 里有些字段名是旧的 (from/snippet)，也兼容一下
+                return {
+                    id_str: item.id_str || ('gas_' + new Date(item.date).getTime()),
+                    sender: item.sender || item.from,
+                    subject: item.subject,
+                    body: item.body || item.snippet,
+                    date: item.date
+                };
+            });
+        }
+        else if (json.status === 'error') {
+            throw new Error("GAS Error: " + json.message);
+        }
+    } 
+    // === API 模式处理 ===
+    else if (account.type === 'API') {
+        const token = account.script_url;
+        const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!listResp.ok) throw new Error("Gmail API List Failed: " + listResp.status);
+        const listData = await listResp.json();
+        
+        if (listData.messages) {
+            for (const msgItem of listData.messages) {
+                const detailResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgItem.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (detailResp.ok) {
+                    const detail = await detailResp.json();
+                    let subject = '(No Subject)';
+                    let sender = 'Unknown';
+                    const headers = detail.payload.headers || [];
+                    headers.forEach(h => {
+                        if (h.name === 'Subject') subject = h.value;
+                        if (h.name === 'From') sender = h.value;
+                    });
+                    messages.push({
+                        id_str: msgItem.id,
+                        sender: sender,
+                        subject: subject,
+                        body: detail.snippet || '(No Content)',
+                        date: Date.now()
+                    });
+                }
+            }
+        }
+    }
+
+    // === 入库逻辑 ===
+    if (messages.length === 0) return 0;
+    
+    let syncCount = 0;
+    for (const msg of messages) {
+        // 查重 (防止重复收取)
+        const exists = await env.DB.prepare("SELECT id FROM received_emails WHERE id_str = ?").bind(msg.id_str).first();
+        if (exists) continue;
+
+        await env.DB.prepare(`
+            INSERT INTO received_emails (account_id, sender, subject, body, received_at, id_str)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(accountId, msg.sender, msg.subject, msg.body, msg.date, msg.id_str).run();
+        
+        syncCount++;
+    }
+
+    return syncCount;
+}
+
 // --- 路由处理 ---
 
 async function handleAccounts(req, env) {
@@ -203,7 +338,6 @@ async function handleAccounts(req, env) {
   
   if (method === 'POST') {
     const data = await req.json();
-    // 批量导入逻辑
     if (Array.isArray(data)) {
         const stmt = env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?)");
         const batch = data.map(acc => stmt.bind(acc.name, acc.alias, acc.type, acc.script_url, acc.status ? 1 : 0));
@@ -247,7 +381,6 @@ async function handleTasks(req, env) {
   if (method === 'POST') {
     const data = await req.json();
     
-    // 批量添加任务
     if (Array.isArray(data)) {
          const stmt = env.DB.prepare(`
             INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
@@ -268,7 +401,6 @@ async function handleTasks(req, env) {
     if (data.immediate) {
         try {
             const account = await findBestAccount(env, data.account_id, mode);
-            // 传递 subject
             const result = await executeSendEmail(account, data.to_email, data.subject, data.content);
             return new Response(JSON.stringify({ ok: result.success, error: result.error }), { headers: corsHeaders() });
         } catch (e) {
@@ -280,7 +412,6 @@ async function handleTasks(req, env) {
     if (data.base_date) nextRun = new Date(data.base_date).getTime();
     if (data.delay_config) nextRun += calculateDelay(data.delay_config);
 
-    // 写入 subject
     await env.DB.prepare(`
       INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
@@ -292,7 +423,6 @@ async function handleTasks(req, env) {
   if (method === 'PUT') {
       const data = await req.json();
       
-      // 手动执行
       if (data.action === 'execute') {
           const task = await env.DB.prepare("SELECT * FROM send_tasks WHERE id = ?").bind(data.id).first();
           if(task) {
@@ -314,7 +444,6 @@ async function handleTasks(req, env) {
           return new Response(JSON.stringify({ ok: false, error: "Task not found" }), { headers: corsHeaders() });
       }
 
-      // 编辑任务
       if (data.id) {
           let nextRun = Date.now();
           if (data.base_date) nextRun = new Date(data.base_date).getTime();
@@ -327,7 +456,6 @@ async function handleTasks(req, env) {
       }
   }
 
-  // DELETE 支持批量
   if (method === 'DELETE') {
     const id = url.searchParams.get('id');
     const ids = url.searchParams.get('ids');
@@ -349,30 +477,47 @@ async function handleTasks(req, env) {
   return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
 }
 
-// 修改后的 handleEmails 函数
+// 4. [修改后] 支持 POST 同步的 handleEmails
 async function handleEmails(req, env) {
    const url = new URL(req.url);
-   
-   // 1. 获取 limit 参数，如果未提供或无效，默认查 50 条
-   let limit = parseInt(url.searchParams.get('limit'));
-   if (!limit || limit <= 0) limit = 5;
-   
-   // 2. 获取 account_id 参数
-   const accountId = url.searchParams.get('account_id');
+   const method = req.method;
 
-   if (accountId) {
-       // 如果指定了邮箱ID，查询该邮箱的最新 N 封邮件
-       const { results } = await env.DB.prepare(
-           "SELECT * FROM received_emails WHERE account_id = ? ORDER BY received_at DESC LIMIT ?"
-       ).bind(accountId, limit).all();
-       return new Response(JSON.stringify(results), { headers: corsHeaders() });
-   } else {
-       // 如果没指定邮箱 (比如查看所有)，查询全局最新 N 封
-       const { results } = await env.DB.prepare(
-           "SELECT * FROM received_emails ORDER BY received_at DESC LIMIT ?"
-       ).bind(limit).all();
-       return new Response(JSON.stringify(results), { headers: corsHeaders() });
+   // === A. POST 请求: 触发同步 (收取邮件) ===
+   if (method === 'POST') {
+       try {
+           const data = await req.json();
+           const accountId = data.account_id;
+           if (!accountId) throw new Error("Missing account_id");
+
+           // 调用同步函数
+           const count = await syncEmails(env, accountId);
+           return new Response(JSON.stringify({ ok: true, count: count }), { headers: corsHeaders() });
+       } catch (e) {
+           return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
+       }
    }
+   
+   // === B. GET 请求: 读取数据库 ===
+   if (method === 'GET') {
+       let limit = parseInt(url.searchParams.get('limit'));
+       if (!limit || limit <= 0) limit = 20; // 默认读取20条
+       
+       const accountId = url.searchParams.get('account_id');
+
+       if (accountId) {
+           const { results } = await env.DB.prepare(
+               "SELECT * FROM received_emails WHERE account_id = ? ORDER BY received_at DESC LIMIT ?"
+           ).bind(accountId, limit).all();
+           return new Response(JSON.stringify(results), { headers: corsHeaders() });
+       } else {
+           const { results } = await env.DB.prepare(
+               "SELECT * FROM received_emails ORDER BY received_at DESC LIMIT ?"
+           ).bind(limit).all();
+           return new Response(JSON.stringify(results), { headers: corsHeaders() });
+       }
+   }
+   
+   return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
 }
 
 async function processScheduledTasks(env) {
@@ -383,8 +528,6 @@ async function processScheduledTasks(env) {
         try {
             const mode = task.execution_mode || 'AUTO';
             const account = await findBestAccount(env, task.account_id, mode);
-            
-            // 调度任务也需要传递 subject
             const res = await executeSendEmail(account, task.to_email, task.subject, task.content);
             
             if(!res.success) {
