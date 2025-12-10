@@ -876,18 +876,29 @@
 
         function saveAccount() {
             const id = $("#acc-id").val();
-            const data = {
-                name: $("#acc-name").val(),
-                alias: $("#acc-alias").val(),
-                api_config: $("#acc-api-config").val(),
-                gas_url: $("#acc-gas-url").val(),
-                status: $("#acc-status").is(":checked")
-            };
+            const apiConfig = $("#acc-api-config").val().trim();
+            const gasUrl = $("#acc-gas-url").val().trim();
             
-            if (!data.api_config && !data.gas_url) {
+            let type = "";
+            if (apiConfig && gasUrl) {
+                type = "API/GAS";
+            } else if (apiConfig) {
+                type = "API";
+            } else if (gasUrl) {
+                type = "GAS";
+            } else {
                 showToast("请至少填写 API 配置或 GAS URL 其中一项");
                 return;
             }
+
+            const data = {
+                name: $("#acc-name").val(),
+                alias: $("#acc-alias").val(),
+                api_config: apiConfig,
+                gas_url: gasUrl,
+                type: type, // 关键：显式提交类型给后端
+                status: $("#acc-status").is(":checked")
+            };
 
             const method = id ? 'PUT' : 'POST';
             if(id) data.id = id;
@@ -898,8 +909,11 @@
                 if (res.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
                     showToast(id ? "更新成功" : "添加成功");
-                    loadAccounts();
-                } else {
+                    loadAccounts().then(() => {
+                        if (currentInboxAccountId == id) {
+                            loadInboxAccounts();
+                        }
+                    });
                     alert("错误: " + res.error);
                 }
             });
