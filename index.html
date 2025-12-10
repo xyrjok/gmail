@@ -45,7 +45,6 @@
             border: none;
             padding: 1rem 1.5rem;
         }
-        /* 侧边栏选中/悬停颜色优化 (灰色半透明) */
         #sidebar-wrapper .list-group-item:hover, #sidebar-wrapper .list-group-item.active {
             background-color: rgba(255,255,255,0.1) !important;
             color: #fff !important;
@@ -55,7 +54,6 @@
         .content-section { display: none; padding: 20px; }
         .content-section.active { display: block; }
 
-        /* 标题字体改小 */
         .content-section h3 {
             font-size: 1.25rem;
             font-weight: 600;
@@ -64,9 +62,9 @@
             padding-bottom: 10px;
         }
         
-        /* 收件箱分栏 */
+        /* [修改] 收件箱分栏宽度增加到 450px */
         .split-view { display: flex; height: calc(100vh - 60px); }
-        .col-c { width: 300px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
+        .col-c { width: 450px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
         .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
         .email-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
         .email-item:hover { background-color: #f1f1f1; }
@@ -87,17 +85,15 @@
             vertical-align: middle;
         }
         
-        /* 表格特定样式：API配置列 */
         .api-config-cell {
             font-size: 0.75rem;
-            max-width: 180px;       /* 限制最大宽度 */
-            white-space: nowrap;    /* 强制不换行 */
-            overflow: hidden;       /* 隐藏超出部分 */
-            text-overflow: ellipsis;/* 超出部分显示省略号 */
+            max-width: 180px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             color: #666;
-            display: block;         /* 块级显示，确保 max-width 生效 */
+            display: block;
         }
-        /* 表格特定样式：GAS URL列 */
         .gas-url-cell {
             max-width: 150px;
             overflow: hidden;
@@ -109,7 +105,6 @@
         .cursor-pointer { cursor: pointer; }
         .cursor-pointer:hover { color: var(--primary-blue); }
 
-        /* 鼠标跟随 Toast 样式 */
         #mouse-toast {
             position: absolute;
             background: rgba(0,0,0,0.8);
@@ -130,7 +125,7 @@
             background-color: #e9ecef;
             color: #000;
             border-left: 4px solid var(--primary-blue);
-            padding-left: calc(1rem - 4px); /* 保持内容对齐 */
+            border-color: #dee2e6 #dee2e6 #dee2e6 var(--primary-blue); /* 保持边框完整 */
         }
     </style>
 </head>
@@ -176,8 +171,7 @@
                             </div>
 
                             <div class="ms-auto">
-                                <input type="file" id="import-acc-file" style="display:none" onchange="importAccountsFile(this)">
-                                <button class="btn btn-sm btn-outline-secondary" onclick="$('#import-acc-file').click()"><i class="fas fa-file-import"></i> 批量导入</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="openBatchAccountModal()"><i class="fas fa-file-import"></i> 批量导入</button>
                                 <button class="btn btn-sm btn-outline-secondary" onclick="exportAccounts()"><i class="fas fa-file-export"></i> 批量导出</button>
                             </div>
                         </div>
@@ -209,23 +203,17 @@
                             <div class="card-header bg-white" id="task-card-title">创建任务 / 立即发送</div>
                             <div class="card-body">
                                 <input type="hidden" id="edit-task-id">
-                                
                                 <label class="form-label text-muted small">发件邮箱</label>
                                 <input class="form-control mb-2" list="account-list-options" id="send-account-input" placeholder="输入名称搜索或点击选择...">
                                 <datalist id="account-list-options"></datalist>
-                                
                                 <label class="form-label text-muted small">收件人 (多个用逗号分隔)</label>
                                 <input type="text" class="form-control mb-2" id="send-to" placeholder="user@example.com">
-                                
                                 <label class="form-label text-muted small">发送主题</label>
                                 <input type="text" class="form-control mb-2" id="send-subject" placeholder="不填默认: Remind">
-
                                 <label class="form-label text-muted small">发送内容</label>
                                 <textarea class="form-control mb-2" id="send-content" rows="3" placeholder="不填默认: Reminder of current time + 时间"></textarea>
-                                
                                 <hr>
                                 <label class="form-label fw-bold text-muted small">定时与循环设置</label>
-                                
                                 <div class="row g-2 mb-2">
                                     <div class="col-6">
                                         <label class="small text-muted">起始日期</label>
@@ -236,13 +224,11 @@
                                         <input type="text" class="form-control" id="range-b" placeholder="10-20">
                                     </div>
                                 </div>
-                                
                                 <div class="mb-3 d-flex align-items-center flex-wrap">
                                     <div class="form-check form-switch me-4">
                                         <input class="form-check-input" type="checkbox" id="loop-switch">
                                         <label class="form-check-label small text-muted" for="loop-switch">循环</label>
                                     </div>
-                                    
                                     <div class="d-flex align-items-center gap-2 border-start ps-3 py-1">
                                         <span class="text-muted small">模式:</span>
                                         <div class="form-check mb-0">
@@ -259,7 +245,6 @@
                                         </div>
                                     </div>
                                 </div>
-                                
                                 <div class="d-flex gap-2">
                                     <button class="btn btn-primary flex-fill" id="btn-save-task" onclick="saveTask()"><i class="fas fa-clock"></i> 添加任务</button>
                                     <button class="btn btn-secondary flex-fill d-none" id="btn-cancel-edit" onclick="cancelEditTask()">取消</button>
@@ -392,9 +377,46 @@
         </div>
     </div>
 
+    <div class="modal fade" id="batchAccountImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入邮箱账户</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="importTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-paste" type="button">粘贴 JSON</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-file" type="button">上传文件</button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-paste">
+                            <p class="small text-muted">请粘贴 JSON 数组格式的账户数据：</p>
+                            <textarea id="import-acc-json" class="form-control" rows="10" placeholder='[{"name":"...", "api_config":"..."}]'></textarea>
+                        </div>
+                        <div class="tab-pane fade" id="tab-file">
+                            <div class="mb-3">
+                                <label for="import-acc-file-input" class="form-label">选择 JSON 文件</label>
+                                <input class="form-control" type="file" id="import-acc-file-input" accept=".json">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitBatchAccountImport()">开始导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js
-"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
         const API_BASE = "https://gm.xyrj.dpdns.org";
         let cachedAccounts = [];
@@ -403,6 +425,8 @@
         
         let currentEmailLimit = 0; 
         let currentInboxAccountId = null;
+        // [新增] 记录当前选择的收信模式
+        let currentFetchMode = 'API'; 
 
         document.addEventListener('mousemove', (e) => {
             lastMouseX = e.pageX;
@@ -448,7 +472,6 @@
             const acc = cachedAccounts.find(a => a.id === id);
             if (!acc) return;
             const data = { ...acc, status: isActive };
-            // 更新状态时可能不传 gas_url 等，后端需处理
             fetch(API_BASE + '/api/accounts', { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) })
                 .then(r => r.json()).then(res => {
                     if(res.ok) { showToast(isActive ? "邮箱已启用" : "邮箱已禁用"); acc.status = isActive ? 1 : 0; }
@@ -514,16 +537,14 @@
                 .then(r => r.json())
                 .then(data => {
                     cachedAccounts = data;
-                    renderAccounts(data); // 使用渲染函数
+                    renderAccounts(data);
                     
-                    // 填充 Datalist
                     let optionsHtml = '';
                     data.forEach(acc => optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`);
                     $("#account-list-options").html(optionsHtml);
                 });
         }
 
-        // 新增：独立的渲染函数，支持搜索过滤
         function renderAccounts(data) {
             let html = '';
             data.forEach(acc => {
@@ -532,7 +553,6 @@
                     <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
                 </div>`;
                 
-                // --- 显示逻辑：双重显示 ---
                 let apiDisplay = '-';
                 if (acc.client_id) {
                     apiDisplay = `ID:${acc.client_id}, Secret:${acc.client_secret ? '******' : '-'}, Token:${acc.refresh_token}`;
@@ -541,12 +561,10 @@
                 }
                 
                 let gasDisplay = '-';
-                // 只有当 script_url 是 http 开头才认为是 GAS URL
                 if (acc.script_url && acc.script_url.startsWith('http')) {
                     gasDisplay = `<span class="gas-url-cell cursor-pointer" onclick="copyText('${acc.script_url}')" title="${acc.script_url}">${acc.script_url}</span>`;
                 }
 
-                // 类型徽章逻辑
                 let badgeClass = 'bg-secondary';
                 if (acc.type === 'API') badgeClass = 'bg-success';
                 else if (acc.type === 'GAS') badgeClass = 'bg-primary';
@@ -571,7 +589,6 @@
             $("#account-list-body").html(html);
         }
         
-        // 新增：前端搜索过滤
         function filterAccounts(text) {
             text = text.toLowerCase();
             const filtered = cachedAccounts.filter(acc => 
@@ -600,32 +617,55 @@
              downloadAnchorNode.remove();
         }
 
-        function importAccountsFile(input) {
-            const file = input.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const json = JSON.parse(e.target.result);
-                    // 发送给后端处理查重和导入
-                    fetch(API_BASE + '/api/accounts', {
-                        method: 'POST',
-                        headers: getHeaders(),
-                        body: JSON.stringify(json)
-                    }).then(r => r.json()).then(res => {
-                        if (res.ok) {
-                            alert(`导入完成！\n成功导入: ${res.imported} 条\n跳过已存在: ${res.skipped} 条`);
-                            loadAccounts();
-                        } else {
-                            showToast("导入失败: " + res.error);
-                        }
-                    });
-                } catch(err) {
-                    showToast("文件格式错误");
-                }
-            };
-            reader.readAsText(file);
-            input.value = ''; 
+        // [新增] 批量导入相关函数
+        function openBatchAccountModal() {
+            $("#import-acc-json").val("");
+            $("#import-acc-file-input").val("");
+            new bootstrap.Modal(document.getElementById('batchAccountImportModal')).show();
+        }
+
+        function submitBatchAccountImport() {
+            const activeTab = $("#importTabs .active").attr("data-bs-target");
+            let jsonString = "";
+
+            if (activeTab === "#tab-paste") {
+                jsonString = $("#import-acc-json").val();
+                if (!jsonString.trim()) return showToast("请输入 JSON 内容");
+                processImport(jsonString);
+            } else {
+                const fileInput = document.getElementById('import-acc-file-input');
+                const file = fileInput.files[0];
+                if (!file) return showToast("请选择文件");
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    processImport(e.target.result);
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function processImport(jsonStr) {
+            try {
+                const json = JSON.parse(jsonStr);
+                if (!Array.isArray(json)) throw new Error("JSON 必须是数组格式");
+
+                fetch(API_BASE + '/api/accounts', {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(json)
+                }).then(r => r.json()).then(res => {
+                    if (res.ok) {
+                        bootstrap.Modal.getInstance(document.getElementById('batchAccountImportModal')).hide();
+                        alert(`导入完成！\n成功: ${res.imported}\n跳过: ${res.skipped}`);
+                        loadAccounts();
+                    } else {
+                        alert("导入失败: " + res.error);
+                    }
+                });
+            } catch(err) {
+                alert("JSON 格式错误: " + err.message);
+            }
         }
 
         // --- 任务管理 ---
@@ -699,16 +739,8 @@
                     let html = '';
                     data.forEach(task => {
                         let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
-                        
-                        // 状态汉化
-                        const statusMap = {
-                            'pending': '等待中',
-                            'success': '成功',
-                            'error': '失败',
-                            'running': '运行中'
-                        };
+                        const statusMap = { 'pending': '等待中', 'success': '成功', 'error': '失败', 'running': '运行中' };
                         const statusText = statusMap[task.status] || task.status;
-                        
                         const acc = cachedAccounts.find(a => a.id == task.account_id);
                         const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
                         const loopSwitch = `
@@ -832,18 +864,12 @@
             $("#acc-id").val(acc.id);
             $("#acc-name").val(acc.name);
             $("#acc-alias").val(acc.alias);
-            
-            // 填充 API Config
             if (acc.client_id) {
                 $("#acc-api-config").val(`${acc.client_id},${acc.client_secret},${acc.refresh_token}`);
             } else {
                 $("#acc-api-config").val("");
             }
-            
-            // 填充 GAS URL
-            // 注意：script_url 可能被用作 API token 的旧存储位置，所以需要判断是否是 http 开头
             $("#acc-gas-url").val(acc.script_url && acc.script_url.startsWith('http') ? acc.script_url : "");
-            
             $("#acc-status").prop("checked", acc.status == 1);
             new bootstrap.Modal(document.getElementById('addAccountModal')).show();
         }
@@ -853,12 +879,11 @@
             const data = {
                 name: $("#acc-name").val(),
                 alias: $("#acc-alias").val(),
-                api_config: $("#acc-api-config").val(), // 使用新字段
-                gas_url: $("#acc-gas-url").val(),       // 使用新字段
+                api_config: $("#acc-api-config").val(),
+                gas_url: $("#acc-gas-url").val(),
                 status: $("#acc-status").is(":checked")
             };
             
-            // 简单校验
             if (!data.api_config && !data.gas_url) {
                 showToast("请至少填写 API 配置或 GAS URL 其中一项");
                 return;
@@ -875,7 +900,7 @@
                     showToast(id ? "更新成功" : "添加成功");
                     loadAccounts();
                 } else {
-                    alert("错误: " + res.error); // 弹出错误（如邮箱已存在）
+                    alert("错误: " + res.error);
                 }
             });
         }
@@ -889,7 +914,6 @@
         // --- 收件箱核心逻辑 (点击即同步) ---
         function setLimit(num) {
             currentEmailLimit = parseInt(num);
-            
             $(".limit-btn").removeClass("active");
             $(".limit-btn").each(function() {
                 if ($(this).text().includes(num + "封")) $(this).addClass("active");
@@ -907,7 +931,6 @@
             if (!val || val <= 0) return;
             currentEmailLimit = parseInt(val);
             $(".limit-btn").removeClass("active");
-            
             if (currentInboxAccountId) {
                 syncAndLoad();
             } else {
@@ -915,27 +938,29 @@
             }
         }
 
+        // [修改] 同步函数带上 Mode
         function syncAndLoad() {
             if (!currentInboxAccountId || !currentEmailLimit) return;
 
             $("#email-content-view").html(`
                 <div class="text-center mt-5">
                     <div class="spinner-border text-primary"></div>
-                    <p class="mt-2 text-muted">正在连接 Gmail 同步最新邮件...</p>
+                    <p class="mt-2 text-muted">正在通过 <b>${currentFetchMode}</b> 同步...</p>
                 </div>
             `);
 
-            // 1. 发送同步指令
             fetch(API_BASE + '/api/emails', {
                 method: 'POST',
                 headers: getHeaders(),
-                body: JSON.stringify({ account_id: currentInboxAccountId })
+                body: JSON.stringify({ 
+                    account_id: currentInboxAccountId,
+                    mode: currentFetchMode // [新增] 传递给后端
+                })
             })
             .then(r => r.json())
             .then(res => {
                 if (res.ok) {
                     if(res.count > 0) showToast(`收取到 ${res.count} 封新邮件`);
-                    // 2. 加载显示
                     fetchEmailsAfterSync(); 
                 } else {
                     $("#email-content-view").html(`
@@ -1007,27 +1032,48 @@
             }
         }
 
-        // 修改版：紧凑 + 序号 + 类型标签
+        // [修改] 渲染收件箱账户列表 (带单选按钮)
         function renderInboxAccounts(accounts) {
             let html = '';
             let index = 1; 
             
             accounts.forEach(acc => {
                 if (acc.status) {
-                    let badgeColor = 'bg-secondary';
-                    if (acc.type === 'API') badgeColor = 'bg-success';
-                    else if (acc.type === 'GAS') badgeColor = 'bg-primary';
-                    else if (acc.type === 'API/GAS') badgeColor = 'bg-info text-dark';
+                    const hasApi = acc.type.includes('API');
+                    const hasGas = acc.type.includes('GAS');
                     
-                    html += `<a href="#" class="list-group-item list-group-item-action py-2" onclick="selectAccount(${acc.id}, this)">
-                        <div class="d-flex align-items-center justify-content-between">
-                            <div class="d-flex align-items-center text-truncate">
-                                <span class="badge bg-light text-secondary border me-2" style="min-width: 25px; padding: 4px 0;">${index}</span>
-                                <span class="fw-bold text-truncate" title="${acc.name}">${acc.name}</span>
+                    let apiDisabled = !hasApi ? 'disabled' : '';
+                    let gasDisabled = !hasGas ? 'disabled' : '';
+                    let apiChecked = '';
+                    let gasChecked = '';
+
+                    // 默认选中逻辑
+                    if (hasGas && !hasApi) {
+                        gasChecked = 'checked';
+                    } else {
+                        apiChecked = 'checked';
+                    }
+
+                    html += `
+                    <div class="list-group-item list-group-item-action py-2 account-row" id="acc-row-${acc.id}" onclick="selectAccount(${acc.id}, this)">
+                        <div class="row align-items-center g-0">
+                            <div class="col text-truncate">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-light text-secondary border me-2" style="min-width: 25px;">${index}</span>
+                                    <span class="fw-bold text-truncate" title="${acc.name}">${acc.name}</span>
+                                </div>
                             </div>
-                            <span class="badge ${badgeColor} ms-1" style="font-size: 0.7em;">${acc.type}</span>
+                            <div class="col-auto ms-2">
+                                <div class="btn-group btn-group-sm" role="group" onclick="event.stopPropagation()">
+                                    <input type="radio" class="btn-check" name="mode_${acc.id}" id="mode_api_${acc.id}" value="API" ${apiChecked} ${apiDisabled} onchange="updateFetchMode(${acc.id}, 'API')">
+                                    <label class="btn btn-outline-success" for="mode_api_${acc.id}" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">API</label>
+
+                                    <input type="radio" class="btn-check" name="mode_${acc.id}" id="mode_gas_${acc.id}" value="GAS" ${gasChecked} ${gasDisabled} onchange="updateFetchMode(${acc.id}, 'GAS')">
+                                    <label class="btn btn-outline-primary" for="mode_gas_${acc.id}" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">GAS</label>
+                                </div>
+                            </div>
                         </div>
-                    </a>`;
+                    </div>`;
                     index++;
                 }
             });
@@ -1037,9 +1083,15 @@
             $("#acc-count-badge").text(index - 1);
         }
 
+        // [修改] 选择账户时同步模式
         function selectAccount(accountId, element) {
             currentInboxAccountId = accountId;
-            $("#inbox-account-list .list-group-item").removeClass("active");
+            
+            // 获取当前账户选中的模式
+            const mode = $(`input[name="mode_${accountId}"]:checked`).val();
+            currentFetchMode = mode || 'API';
+
+            $(".account-row").removeClass("active");
             $(element).addClass("active");
             
             currentEmailLimit = 0; 
@@ -1049,10 +1101,19 @@
             $("#email-content-view").html(`
                 <div class="text-center mt-5 text-muted">
                     <i class="fas fa-hand-pointer fa-3x mb-3"></i>
-                    <p>已选中邮箱</p>
-                    <p class="small">点击上方 "1封" / "3封" 按钮<br>将自动同步并显示最新邮件</p>
+                    <p>已选中邮箱: <b>${$(element).find('.fw-bold').text()}</b></p>
+                    <p>当前模式: <span class="badge bg-secondary">${currentFetchMode}</span></p>
+                    <p class="small mt-3">点击上方 "1封" / "3封" 按钮<br>将自动同步并显示最新邮件</p>
                 </div>
             `);
+        }
+
+        // [新增] 手动更新模式
+        function updateFetchMode(accId, mode) {
+            if (currentInboxAccountId === accId) {
+                currentFetchMode = mode;
+                showToast("收件模式已切换为: " + mode);
+            }
         }
 
         if(localStorage.getItem("auth_token")) {
