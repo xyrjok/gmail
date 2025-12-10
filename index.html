@@ -425,7 +425,6 @@
         
         let currentEmailLimit = 0; 
         let currentInboxAccountId = null;
-        // [新增] 记录当前选择的收信模式
         let currentFetchMode = 'API'; 
 
         document.addEventListener('mousemove', (e) => {
@@ -876,6 +875,8 @@
 
         function saveAccount() {
             const id = $("#acc-id").val();
+
+            // --- 修改 1：获取值并自动计算账号类型 ---
             const apiConfig = $("#acc-api-config").val().trim();
             const gasUrl = $("#acc-gas-url").val().trim();
             
@@ -899,25 +900,42 @@
                 type: type, // 关键：显式提交类型给后端
                 status: $("#acc-status").is(":checked")
             };
+            // --- 修改 1 结束 ---
 
             const method = id ? 'PUT' : 'POST';
             if(id) data.id = id;
             
+            // 禁用按钮防止重复提交
+            const btn = $(event.target);
+            if(btn.length) btn.prop('disabled', true);
+
             fetch(API_BASE + '/api/accounts', { method, headers: getHeaders(), body: JSON.stringify(data) })
             .then(r => r.json())
             .then(res => {
+                if(btn.length) btn.prop('disabled', false); // 恢复按钮
+                
                 if (res.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
                     showToast(id ? "更新成功" : "添加成功");
+                    
+                    // --- 修改 2：保存后刷新账号列表，如果是当前选中的账号，也刷新收信侧边栏 ---
                     loadAccounts().then(() => {
                         if (currentInboxAccountId == id) {
-                            loadInboxAccounts();
+                            loadInboxAccounts(); // 刷新侧边栏状态
                         }
                     });
+                    // --- 修改 2 结束 ---
+
+                } else {
                     alert("错误: " + res.error);
                 }
+            })
+            .catch(err => {
+                if(btn.length) btn.prop('disabled', false);
+                showToast("网络请求失败");
             });
         }
+
         function delAccount(id) {
             if(confirm("删除此邮箱?")) {
                 fetch(API_BASE + '/api/accounts?id=' + id, { method: 'DELETE', headers: getHeaders() })
