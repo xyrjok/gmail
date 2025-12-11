@@ -31,1018 +31,1127 @@
         /* 侧边栏布局 */
         #sidebar-wrapper {
             min-height: 100vh;
-            width: var(--sidebar-width);
-            background-color: #343a40;
+            margin-left: -var(--sidebar-width);
+            transition: margin .25s ease-out;
+            background: #343a40;
             color: #fff;
             position: fixed;
-            top: 0;
-            left: 0;
+            width: var(--sidebar-width);
             z-index: 1000;
-            overflow-y: auto;
         }
-        #page-content-wrapper {
-            margin-left: var(--sidebar-width);
-            padding: 20px;
-            width: calc(100% - var(--sidebar-width));
+        #sidebar-wrapper .list-group-item {
+            background-color: transparent;
+            color: #ccc;
+            border: none;
+            padding: 1rem 1.5rem;
         }
-        
-        /* 账户列表样式 */
-        .account-row {
-            padding: 10px;
-            border-bottom: 1px solid #495057;
-            cursor: pointer;
-            transition: background-color 0.2s;
+        #sidebar-wrapper .list-group-item:hover, #sidebar-wrapper .list-group-item.active {
+            background-color: rgba(255,255,255,0.1) !important;
+            color: #fff !important;
+            border-color: transparent !important;
         }
-        .account-row:hover {
-            background-color: #495057;
-        }
-        .account-row.active {
-            background-color: var(--primary-blue);
-        }
-        .account-row .badge {
-            font-size: 0.7rem;
-        }
+        #page-content-wrapper { width: 100%; padding-left: var(--sidebar-width); }
+        .content-section { display: none; padding: 20px; }
+        .content-section.active { display: block; }
 
-        /* 内容区卡片 */
-        .card {
-            border-radius: 0.5rem;
-            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-        }
-        
-        /* 任务列表 */
-        .task-list-item {
+        .content-section h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem !important;
             border-bottom: 1px solid #eee;
-            padding: 10px 0;
-        }
-        .task-list-item:last-child {
-            border-bottom: none;
-        }
-
-        /* 邮件列表 */
-        .email-list-item {
-            border-bottom: 1px solid #eee;
-            padding: 10px 0;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .email-list-item:hover {
-            background-color: #f1f1f1;
-        }
-
-        /* 模态框样式 */
-        .modal-header {
-            border-bottom: none;
-        }
-        .modal-footer {
-            border-top: none;
+            padding-bottom: 10px;
         }
         
-        /* 底部状态栏 */
-        .fixed-bottom-bar {
-            position: fixed;
-            bottom: 0;
-            left: var(--sidebar-width);
-            width: calc(100% - var(--sidebar-width));
-            background-color: #fff;
-            border-top: 1px solid #e9ecef;
-            padding: 10px 20px;
-            box-shadow: 0 -2px 5px rgba(0,0,0,.05);
-            z-index: 1050;
+        /* [修改] 收件箱分栏宽度增加到 450px */
+        .split-view { display: flex; height: calc(100vh - 60px); }
+        .col-c { width: 450px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
+        .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
+        .email-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .email-item:hover { background-color: #f1f1f1; }
+        
+        /* 登录遮罩 */
+        #login-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; z-index: 9999; display: flex;
+            align-items: center; justify-content: center;
         }
 
+        .text-truncate-cell {
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        
+        .api-config-cell {
+            font-size: 0.75rem;
+            max-width: 180px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #666;
+            display: block;
+        }
+        .gas-url-cell {
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: block;
+        }
+        
+        .cursor-pointer { cursor: pointer; }
+        .cursor-pointer:hover { color: var(--primary-blue); }
+
+        #mouse-toast {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            pointer-events: none;
+            z-index: 10000;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+        }
+
+        /* 邮箱列表选中样式优化 */
+        #inbox-account-list .list-group-item.active {
+            background-color: #e9ecef;
+            color: #000;
+            border-left: 4px solid var(--primary-blue);
+            border-color: #dee2e6 #dee2e6 #dee2e6 var(--primary-blue); /* 保持边框完整 */
+        }
     </style>
 </head>
 <body>
 
-<div id="wrapper">
-    <div id="sidebar-wrapper">
-        <div class="sidebar-heading text-center py-4 fs-5 border-bottom border-dark">
-            <i class="fas fa-envelope-open-text me-2"></i> Gmail Master
-        </div>
-        <div class="list-group list-group-flush">
-            <a href="#tab-accounts" class="list-group-item list-group-item-action bg-dark text-light border-dark active" data-bs-toggle="tab"><i class="fas fa-users me-2"></i> 邮箱管理 <span class="badge bg-primary rounded-pill float-end" id="acc-count-badge">0</span></a>
-            <a href="#tab-tasks" class="list-group-item list-group-item-action bg-dark text-light border-dark" data-bs-toggle="tab"><i class="fas fa-tasks me-2"></i> 定时任务 <span class="badge bg-danger rounded-pill float-end" id="task-count-badge">0</span></a>
-            <a href="#tab-inbox" class="list-group-item list-group-item-action bg-dark text-light border-dark" data-bs-toggle="tab"><i class="fas fa-inbox me-2"></i> 收件箱</a>
-            <a href="#" class="list-group-item list-group-item-action bg-dark text-light border-dark mt-4" id="logout-btn"><i class="fas fa-sign-out-alt me-2"></i> 退出登录</a>
+    <div id="mouse-toast"></div>
+
+    <div id="login-overlay">
+        <div class="card p-4 shadow" style="width: 350px;">
+            <h4 class="text-center mb-3">系统登录</h4>
+            <input type="text" id="admin-user" class="form-control mb-2" placeholder="用户名">
+            <input type="password" id="admin-pass" class="form-control mb-3" placeholder="密码 (回车登录)">
+            <button class="btn btn-primary w-100" onclick="doLogin()">登录</button>
         </div>
     </div>
 
-    <div id="page-content-wrapper">
-        <div class="container-fluid">
+    <div class="d-flex" id="wrapper">
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading text-center py-4 fs-4 border-bottom border-secondary">
+                <i class="fas fa-mail-bulk"></i> Gmail Manager
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="fas fa-users-cog me-2"></i> 邮箱管理</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="fas fa-paper-plane me-2"></i> 发件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="fas fa-inbox me-2"></i> 收件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="fas fa-sign-out-alt me-2"></i> 退出登录</a>
+            </div>
+        </div>
+
+        <div id="page-content-wrapper">
             
-            <div class="tab-content">
-                
-                <div class="tab-pane fade show active" id="tab-accounts">
-                    <h3 class="mt-4 mb-4"><i class="fas fa-users me-2"></i> 邮箱管理</h3>
-                    <div class="row">
-                        <div class="col-12">
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    邮箱列表
-                                    <div>
-                                        <button class="btn btn-sm btn-danger me-2" id="delete-selected-acc-btn" disabled><i class="fas fa-trash me-1"></i> 删除选中</button>
-                                        <button class="btn btn-sm btn-primary" id="add-account-btn"><i class="fas fa-plus me-1"></i> 添加邮箱</button>
-                                    </div>
-                                </div>
-                                <div class="card-body p-0">
-                                    <div class="list-group list-group-flush" id="account-list">
-                                        <div class="p-3 text-center text-muted">加载中...</div>
-                                    </div>
-                                </div>
+            <div id="section-accounts" class="content-section active">
+                <h3 class="mb-4">邮箱管理</h3>
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+                            <button class="btn btn-sm btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> 添加邮箱</button>
+                            <button class="btn btn-sm btn-danger" onclick="batchDelAccounts()"><i class="fas fa-trash"></i> 批量删除</button>
+                            
+                            <div class="input-group input-group-sm ms-2" style="width: 200px;">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" placeholder="搜索名称/别名..." onkeyup="filterAccounts(this.value)">
+                            </div>
+
+                            <div class="ms-auto">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="openBatchAccountModal()"><i class="fas fa-file-import"></i> 批量导入</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="exportAccounts()"><i class="fas fa-file-export"></i> 批量导出</button>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <div class="tab-pane fade" id="tab-tasks">
-                    <h3 class="mt-4 mb-4"><i class="fas fa-tasks me-2"></i> 定时任务</h3>
-                    <div class="row">
-                        <div class="col-12">
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    任务列表
-                                    <div>
-                                        <button class="btn btn-sm btn-danger me-2" id="delete-selected-task-btn" disabled><i class="fas fa-trash me-1"></i> 删除选中</button>
-                                        <button class="btn btn-sm btn-primary" id="add-task-btn"><i class="fas fa-plus me-1"></i> 创建任务</button>
-                                    </div>
-                                </div>
-                                <div class="card-body p-0">
-                                    <div class="list-group list-group-flush" id="task-list">
-                                        <div class="p-3 text-center text-muted">暂无任务</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tab-pane fade" id="tab-inbox">
-                    <h3 class="mt-4 mb-4"><i class="fas fa-inbox me-2"></i> 收件箱</h3>
-                    <div class="row">
-                        <div class="col-4">
-                            <div class="card">
-                                <div class="card-header">
-                                    可选邮箱 (<span id="inbox-acc-count-badge">0</span>)
-                                </div>
-                                <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
-                                    <div class="list-group list-group-flush" id="inbox-account-list">
-                                        </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="col-8">
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    最新邮件内容
-                                    <div class="btn-group btn-group-sm" role="group">
-                                        <button type="button" class="btn btn-outline-primary limit-btn" data-limit="1">同步 1 封</button>
-                                        <button type="button" class="btn btn-outline-primary limit-btn" data-limit="3">同步 3 封</button>
-                                        <button type="button" class="btn btn-outline-primary limit-btn" data-limit="5">同步 5 封</button>
-                                    </div>
-                                </div>
-                                <div class="card-body" style="min-height: 400px; max-height: 600px; overflow-y: auto;">
-                                    <div id="email-content-view">
-                                        <div class="text-center mt-5 text-muted">
-                                            <i class="fas fa-hand-pointer fa-3x mb-3"></i>
-                                            <p>请先在左侧选择一个邮箱</p>
-                                            <p class="small mt-3">然后点击上方 "同步 X 封" 按钮<br>将自动同步并显示最新邮件</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="loginModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="loginModalLabel"><i class="fas fa-user-lock me-2"></i> 管理员登录</h5>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label for="username" class="form-label">用户名</label>
-                    <input type="text" class="form-control" id="username" placeholder="请输入用户名">
-                </div>
-                <div class="mb-3">
-                    <label for="password" class="form-label">密码</label>
-                    <input type="password" class="form-control" id="password" placeholder="请输入密码">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-primary w-100" id="login-btn">登录</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="accountModal" tabindex="-1" aria-labelledby="accountModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="accountModalLabel"><i class="fas fa-envelope me-2"></i> 添加邮箱</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="account-id">
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="account-name" class="form-label">邮箱名称 <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="account-name" placeholder="如：Gmail 主号">
-                        <div class="form-text text-muted">用于管理和区分的名称。</div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="account-alias" class="form-label">邮箱别名</label>
-                        <input type="text" class="form-control" id="account-alias" placeholder="如：我的发件人名称">
-                        <div class="form-text text-muted">发件时显示的名称。</div>
-                    </div>
-                    <div class="col-md-12 mb-3">
-                        <label for="account-type" class="form-label">类型 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="account-type">
-                            <option value="GAS">Gmail App (GAS) - 推荐</option>
-                            <option value="API">Gmail API (OAuth2)</option>
-                            <option value="API/GAS">API 优先 / GAS 备选</option>
-                        </select>
-                        <div class="form-text text-muted">选择发送邮件的方式。</div>
-                    </div>
-                </div>
-
-                <div class="card p-3 mb-3 border-primary api-settings-block">
-                    <h6 class="mb-3 text-primary"><i class="fas fa-key me-1"></i> Gmail API (OAuth2) 配置</h6>
-                    <div class="row">
-                        <div class="col-md-12 mb-3">
-                            <label for="api-client-id" class="form-label">Client ID</label>
-                            <input type="text" class="form-control" id="api-client-id" placeholder="Your OAuth Client ID">
-                        </div>
-                        <div class="col-md-12 mb-3">
-                            <label for="api-client-secret" class="form-label">Client Secret</label>
-                            <input type="text" class="form-control" id="api-client-secret" placeholder="Your Client Secret">
-                        </div>
-                        <div class="col-md-12 mb-3">
-                            <label for="api-refresh-token" class="form-label">Refresh Token</label>
-                            <input type="text" class="form-control" id="api-refresh-token" placeholder="Your Refresh Token">
-                            <div class="form-text text-muted">
-                                仅当 Type 包含 API 时需要填写。
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card p-3 mb-3 border-success gas-settings-block">
-                    <h6 class="mb-3 text-success"><i class="fas fa-link me-1"></i> Gmail App (GAS) 配置</h6>
-                    <div class="row">
-                        <div class="col-md-12 mb-3">
-                            <label for="gas-script-url" class="form-label">GAS 脚本 URL</label>
-                            <input type="text" class="form-control" id="gas-script-url" placeholder="部署后的 Google Apps Script URL">
-                            <div class="form-text text-muted">
-                                仅当 Type 包含 GAS 时需要填写。
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-check form-switch mt-3">
-                    <input class="form-check-input" type="checkbox" id="account-status" checked>
-                    <label class="form-check-label" for="account-status">启用状态 (启用后可用于发送)</label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="save-account-btn">保存</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="taskModal" tabindex="-1" aria-labelledby="taskModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="taskModalLabel"><i class="fas fa-tasks me-2"></i> 创建定时任务</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="task-account" class="form-label">发件邮箱 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="task-account">
-                            </select>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="task-to-email" class="form-label">收件人邮箱 <span class="text-danger">*</span></label>
-                        <input type="email" class="form-control" id="task-to-email" placeholder="目标邮箱地址">
-                    </div>
-                    <div class="col-md-12 mb-3">
-                        <label for="task-subject" class="form-label">邮件主题</label>
-                        <input type="text" class="form-control" id="task-subject" placeholder="邮件主题（可留空）">
-                    </div>
-                    <div class="col-md-12 mb-3">
-                        <label for="task-content" class="form-label">邮件内容</label>
-                        <textarea class="form-control" id="task-content" rows="3" placeholder="邮件正文（可留空）"></textarea>
-                    </div>
-
-                    <div class="col-md-6 mb-3">
-                        <label for="task-schedule-type" class="form-label">任务类型 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="task-schedule-type">
-                            <option value="once">单次发送</option>
-                            <option value="loop">循环发送 (常用于养号)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="task-execution-mode" class="form-label">执行模式 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="task-execution-mode">
-                            <option value="AUTO">AUTO (智能选择)</option>
-                            <option value="API">API (仅使用 API)</option>
-                            <option value="GAS">GAS (仅使用 GAS)</option>
-                        </select>
-                        <div class="form-text text-muted">仅当邮箱配置了两种方式时有效。</div>
-                    </div>
-                    
-                    <div class="col-md-6 mb-3 loop-settings">
-                        <label for="task-base-date" class="form-label">首次发送日期/时间</label>
-                        <input type="datetime-local" class="form-control" id="task-base-date">
-                        <div class="form-text text-muted">首次发送的时间。</div>
-                    </div>
-                    
-                    <div class="col-md-6 mb-3 loop-settings">
-                        <label for="task-delay-config" class="form-label">延迟配置 (天) <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="task-delay-config" placeholder="如：1 或 1-3">
-                        <div class="form-text text-muted">下次发送延迟天数，可填写范围 (如 1-3)。</div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="save-task-btn">创建任务</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-
-<div class="fixed-bottom-bar d-flex justify-content-between align-items-center">
-    <div id="status-message">
-        <i class="fas fa-info-circle me-1"></i> 系统状态：正常
-    </div>
-    <div class="text-muted small">
-        后端 Worker URL: <span id="worker-url-display">未设置</span>
-    </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-<script>
-    const API_BASE = "https://gm.xyrj.dpdns.org"; // 替换为你的 Worker URL
-    
-    let ALL_ACCOUNTS = [];
-    let selectedAccountIds = new Set();
-    let selectedTaskIds = new Set();
-    let currentInboxAccountId = null;
-    let currentFetchMode = 'API'; // 默认模式
-
-    $(document).ready(function() {
-        // 在底部显示 Worker URL
-        $("#worker-url-display").text(API_BASE);
-
-        // 初始化：检查登录状态
-        if (!localStorage.getItem("auth_token")) {
-            const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
-            loginModal.show();
-        } else {
-            initApp();
-        }
-        
-        // 绑定事件
-        $("#login-btn").on("click", handleLogin);
-        $("#logout-btn").on("click", handleLogout);
-        $("#add-account-btn").on("click", () => showAccountModal());
-        $("#save-account-btn").on("click", handleSaveAccount);
-        $("#account-list").on("change", "input[type='checkbox']", handleAccountCheckboxChange);
-        $("#delete-selected-acc-btn").on("click", handleDeleteSelectedAccounts);
-        
-        // 绑定邮箱类型切换事件 (控制显示)
-        $("#account-type").on("change", toggleAccountTypeSettings);
-        
-        // 任务相关事件
-        $("#add-task-btn").on("click", () => showTaskModal());
-        $("#save-task-btn").on("click", handleSaveTask);
-        $("#task-schedule-type").on("change", toggleTaskScheduleSettings);
-        $("#task-list").on("change", "input[type='checkbox']", handleTaskCheckboxChange);
-        $("#delete-selected-task-btn").on("click", handleDeleteSelectedTasks);
-
-        // 收件箱事件
-        $("#inbox-account-list").on("click", ".account-row", function() {
-            const accountId = $(this).data('id');
-            // 获取用户在前端选择的模式（API/GAS）
-            const mode = $(this).find('input[name^="mode_"]:checked').val() || 'API';
-            selectAccount(accountId, this, mode);
-        });
-        
-        // 收件箱模式切换事件
-        $("#inbox-account-list").on("change", 'input[name^="mode_"]', function() {
-            const accId = $(this).data('acc-id');
-            const mode = $(this).val();
-            updateFetchMode(accId, mode);
-        });
-
-        // 邮件同步按钮事件
-        $(".limit-btn").on("click", handleSyncEmails);
-    });
-
-    // --- 辅助函数 ---
-
-    function showToast(message, type = 'success') {
-        $("#status-message").html(`<i class="fas fa-info-circle me-1"></i> ${message}`);
-        $("#status-message").removeClass().addClass(type === 'success' ? 'text-success' : 'text-danger');
-        setTimeout(() => {
-            $("#status-message").html(`<i class="fas fa-info-circle me-1"></i> 系统状态：正常`);
-            $("#status-message").removeClass();
-        }, 5000);
-    }
-    
-    function getAuthHeader() {
-        return {
-            "Authorization": `Basic ${localStorage.getItem("auth_token")}`,
-            "Content-Type": "application/json"
-        };
-    }
-
-    // --- 登录/退出 ---
-
-    async function handleLogin() {
-        const username = $("#username").val().trim();
-        const password = $("#password").val().trim();
-        if (!username || !password) {
-            showToast("用户名或密码不能为空", 'error');
-            return;
-        }
-
-        const token = btoa(`${username}:${password}`);
-        
-        try {
-            const resp = await fetch(`${API_BASE}/api/accounts`, {
-                method: 'GET',
-                headers: { "Authorization": `Basic ${token}` }
-            });
-
-            if (resp.status === 401) {
-                showToast("用户名或密码错误", 'error');
-                return;
-            }
-            if (!resp.ok) {
-                 const errText = await resp.json().catch(() => ({error: '未知错误'}));
-                 showToast(`登录失败: ${errText.error}`, 'error');
-                 return;
-            }
-
-            localStorage.setItem("auth_token", token);
-            const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
-            loginModal.hide();
-            initApp();
-
-        } catch (e) {
-            showToast("网络请求失败: " + e.message, 'error');
-        }
-    }
-
-    function handleLogout() {
-        localStorage.removeItem("auth_token");
-        window.location.reload();
-    }
-    
-    // --- 页面初始化 ---
-    
-    function initApp() {
-        loadAccounts();
-        loadTasks();
-    }
-    
-    // --- 账户管理 ---
-
-    function toggleAccountTypeSettings() {
-        const type = $("#account-type").val();
-        if (type.includes('API')) {
-            $(".api-settings-block").show();
-        } else {
-            $(".api-settings-block").hide();
-        }
-        
-        if (type.includes('GAS')) {
-            $(".gas-settings-block").show();
-        } else {
-            $(".gas-settings-block").hide();
-        }
-    }
-
-    async function loadAccounts() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/accounts`, { headers: getAuthHeader() });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '加载邮箱失败'}));
-                showToast(`加载邮箱失败: ${err.error}`, 'error');
-                return;
-            }
-            ALL_ACCOUNTS = await resp.json();
-            
-            renderAccountList("#account-list", ALL_ACCOUNTS, true);
-            renderAccountList("#inbox-account-list", ALL_ACCOUNTS.filter(a => a.status === 1), false);
-            renderTaskAccountSelect(ALL_ACCOUNTS.filter(a => a.status === 1));
-
-        } catch (e) {
-            showToast("加载邮箱时网络请求失败: " + e.message, 'error');
-        }
-    }
-
-    function renderAccountList(targetSelector, accounts, showCheckboxes) {
-        let html = '';
-        const activeAccounts = accounts.filter(a => a.status === 1);
-        
-        if (targetSelector === '#account-list') {
-             $("#acc-count-badge").text(accounts.length);
-        } else if (targetSelector === '#inbox-account-list') {
-             $("#inbox-acc-count-badge").text(activeAccounts.length);
-        }
-
-        if (accounts.length === 0) {
-            $(targetSelector).html('<div class="p-3 text-center text-muted">暂无邮箱</div>');
-            return;
-        }
-
-        accounts.forEach(account => {
-            const typeBadges = [];
-            if (account.type.includes('API')) typeBadges.push(`<span class="badge bg-primary me-1">API</span>`);
-            if (account.type.includes('GAS')) typeBadges.push(`<span class="badge bg-success">GAS</span>`);
-
-            // [核心修改] 列表渲染逻辑：读取新的 api_config_display 和 script_url
-            let configDisplay = '';
-            if (account.api_config_display) {
-                configDisplay += `<div class="small text-muted mt-1">API: ${account.api_config_display}</div>`;
-            }
-            if (account.script_url) {
-                configDisplay += `<div class="small text-muted">GAS URL: ${account.script_url.substring(0, 50)}...</div>`;
-            }
-
-            // 收件箱模式选择
-            let modeSelect = '';
-            if (targetSelector === '#inbox-account-list') {
-                modeSelect = `
-                    <div class="mt-2 btn-group btn-group-sm" role="group">
-                        <input type="radio" class="btn-check" name="mode_${account.id}" id="mode_api_${account.id}" autocomplete="off" value="API" data-acc-id="${account.id}" ${account.type.includes('API') ? 'checked' : 'disabled'}>
-                        <label class="btn btn-outline-primary" for="mode_api_${account.id}">API</label>
                         
-                        <input type="radio" class="btn-check" name="mode_${account.id}" id="mode_gas_${account.id}" autocomplete="off" value="GAS" data-acc-id="${account.id}" ${account.type.includes('GAS') ? 'checked' : 'disabled'}>
-                        <label class="btn btn-outline-success" for="mode_gas_${account.id}">GAS</label>
+                        <table class="table table-hover table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="check-all-acc" onchange="toggleAll('acc')"></th>
+                                    <th>名称</th>
+                                    <th>别名</th>
+                                    <th style="width: 25%">API 配置 (ID/Secret/Token)</th>
+                                    <th style="width: 20%">GAS URL</th>
+                                    <th>类型</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="account-list-body"></tbody>
+                        </table>
                     </div>
-                `;
-            }
+                </div>
+            </div>
 
-            html += `
-                <div class="account-row d-flex justify-content-between align-items-center ${account.status === 0 ? 'bg-light text-muted' : ''}" data-id="${account.id}" data-type="${account.type}" ${!showCheckboxes ? 'role="button"' : ''}>
-                    <div class="d-flex align-items-center">
-                        ${showCheckboxes ? `<input type="checkbox" class="form-check-input me-3" data-id="${account.id}">` : ''}
-                        <div>
-                            <div class="fw-bold">${account.name} (${account.alias || '无别名'}) ${account.status === 0 ? '<span class="badge bg-secondary">禁用</span>' : ''}</div>
-                            <div class="text-secondary small">${account.id} - ${account.type} ${typeBadges.join('')}</div>
-                            ${configDisplay}
-                            ${modeSelect}
+            <div id="section-send" class="content-section">
+                <h3 class="mb-4">发件设置 & 循环任务</h3>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card shadow-sm mb-3">
+                            <div class="card-header bg-white" id="task-card-title">创建任务 / 立即发送</div>
+                            <div class="card-body">
+                                <input type="hidden" id="edit-task-id">
+                                <label class="form-label text-muted small">发件邮箱</label>
+                                <input class="form-control mb-2" list="account-list-options" id="send-account-input" placeholder="输入名称搜索或点击选择...">
+                                <datalist id="account-list-options"></datalist>
+                                <label class="form-label text-muted small">收件人 (多个用逗号分隔)</label>
+                                <input type="text" class="form-control mb-2" id="send-to" placeholder="user@example.com">
+                                <label class="form-label text-muted small">发送主题</label>
+                                <input type="text" class="form-control mb-2" id="send-subject" placeholder="不填默认: Remind">
+                                <label class="form-label text-muted small">发送内容</label>
+                                <textarea class="form-control mb-2" id="send-content" rows="3" placeholder="不填默认: Reminder of current time + 时间"></textarea>
+                                <hr>
+                                <label class="form-label fw-bold text-muted small">定时与循环设置</label>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6">
+                                        <label class="small text-muted">起始日期</label>
+                                        <input type="datetime-local" class="form-control" id="date-a">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="small text-muted">随机天数 (10-20)</label>
+                                        <input type="text" class="form-control" id="range-b" placeholder="10-20">
+                                    </div>
+                                </div>
+                                <div class="mb-3 d-flex align-items-center flex-wrap">
+                                    <div class="form-check form-switch me-4">
+                                        <input class="form-check-input" type="checkbox" id="loop-switch">
+                                        <label class="form-check-label small text-muted" for="loop-switch">循环</label>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2 border-start ps-3 py-1">
+                                        <span class="text-muted small">模式:</span>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="radio" name="pref-mode" id="pref-auto" checked>
+                                            <label class="form-check-label small text-muted" for="pref-auto">自动</label>
+                                        </div>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="radio" name="pref-mode" id="pref-api">
+                                            <label class="form-check-label small text-muted" for="pref-api">API</label>
+                                        </div>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="radio" name="pref-mode" id="pref-gas">
+                                            <label class="form-check-label small text-muted" for="pref-gas">GAS</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-primary flex-fill" id="btn-save-task" onclick="saveTask()"><i class="fas fa-clock"></i> 添加任务</button>
+                                    <button class="btn btn-secondary flex-fill d-none" id="btn-cancel-edit" onclick="cancelEditTask()">取消</button>
+                                    <button class="btn btn-success flex-fill" onclick="sendNow()"><i class="fas fa-paper-plane"></i> 立即发送</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    ${showCheckboxes ? `
-                        <button class="btn btn-sm btn-outline-secondary edit-acc-btn" data-id="${account.id}"><i class="fas fa-edit"></i> 编辑</button>
-                    ` : ''}
+                    <div class="col-md-8">
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                                <span>任务队列</span>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary me-1" onclick="openBatchTaskModal()"><i class="fas fa-file-upload"></i> 批量添加</button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="batchDelTasks()"><i class="fas fa-trash"></i> 批量删除</button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" style="overflow-x: auto;">
+                                <table class="table table-sm table-striped m-0">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="check-all-task" onchange="toggleAll('task')"></th>
+                                            <th>发件邮箱</th>
+                                            <th>主题</th>
+                                            <th>下次运行</th>
+                                            <th>循环</th>
+                                            <th>状态</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="task-list-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            `;
+            </div>
+
+            <div id="section-receive" class="content-section p-0">
+                <div class="split-view">
+                    <div class="col-c bg-light border-end">
+                        <div class="p-3 border-bottom bg-white">
+                            <label class="form-label small text-muted mb-2 fw-bold">显示最近邮件数</label>
+                            <div class="d-flex gap-2 mb-2">
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(1)">1封</button>
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(2)">2封</button>
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(3)">3封</button>
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(5)">5封</button>
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">自定义</span>
+                                <input type="number" class="form-control" id="custom-limit-input" placeholder="输入数量" onchange="setCustomLimit(this.value)">
+                            </div>
+                        </div>
+                        
+                        <div class="p-2 text-muted small bg-light border-bottom d-flex justify-content-between align-items-center">
+                            <span>邮箱账户列表</span>
+                            <span class="badge bg-secondary rounded-pill" id="acc-count-badge">0</span>
+                        </div>
+                        <div id="inbox-account-list" class="list-group list-group-flush" style="font-size: 0.85rem;"></div>
+                    </div>
+                    
+                    <div class="col-d bg-white">
+                        <div id="email-content-view">
+                            <div class="text-center mt-5 text-muted">
+                                <i class="fas fa-inbox fa-3x mb-3"></i>
+                                <p>请在左侧选择邮箱查看邮件</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="modal fade" id="addAccountModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="accModalTitle">添加邮箱</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="acc-id">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">基本信息</label>
+                        <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名 (唯一)">
+                        <input type="text" class="form-control" id="acc-alias" placeholder="别名 (可选)">
+                    </div>
+                    
+                    <div class="mb-3 p-2 border rounded bg-light">
+                        <label class="form-label small fw-bold mb-1">Gmail API 设置 (可选)</label>
+                        <div class="form-text mb-2" style="font-size:0.75rem">格式: Client ID, Client Secret, Refresh Token (逗号分隔)</div>
+                        <textarea class="form-control" id="acc-api-config" rows="2" placeholder="ID,Secret,Token"></textarea>
+                    </div>
+
+                    <div class="mb-3 p-2 border rounded bg-light">
+                        <label class="form-label small fw-bold mb-1">Gmail App (GAS) 设置 (可选)</label>
+                        <input type="text" class="form-control" id="acc-gas-url" placeholder="https://script.google.com/macros/s/...">
+                    </div>
+
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="acc-status" checked>
+                        <label class="form-check-label text-muted">启用</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="saveAccount()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="batchTaskModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量添加任务 (JSON)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">格式: <code>[{"account_id":1, "to_email":"a@b.com", "subject":"Hi", ...}]</code></p>
+                    <textarea id="batch-task-json" class="form-control" rows="10" placeholder="在此粘贴 JSON 数组"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="submitBatchTasks()">提交</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="batchAccountImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入邮箱账户</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="importTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-paste" type="button">粘贴 JSON</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-file" type="button">上传文件</button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-paste">
+                            <p class="small text-muted">请粘贴 JSON 数组格式的账户数据：</p>
+                            <textarea id="import-acc-json" class="form-control" rows="10" placeholder='[{"name":"...", "api_config":"..."}]'></textarea>
+                        </div>
+                        <div class="tab-pane fade" id="tab-file">
+                            <div class="mb-3">
+                                <label for="import-acc-file-input" class="form-label">选择 JSON 文件</label>
+                                <input class="form-control" type="file" id="import-acc-file-input" accept=".json">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitBatchAccountImport()">开始导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE = "https://gm.xyrj.dpdns.org";
+        let cachedAccounts = [];
+        let cachedTasks = [];
+        let lastMouseX = 0, lastMouseY = 0;
+        
+        let currentEmailLimit = 0; 
+        let currentInboxAccountId = null;
+        let currentFetchMode = 'API'; 
+
+        document.addEventListener('mousemove', (e) => {
+            lastMouseX = e.pageX;
+            lastMouseY = e.pageY;
+        });
+        document.addEventListener('click', (e) => {
+            lastMouseX = e.pageX;
+            lastMouseY = e.pageY;
         });
 
-        $(targetSelector).html(html);
-        
-        // 绑定编辑事件
-        if (showCheckboxes) {
-            $(".edit-acc-btn").on("click", function(e) {
-                e.stopPropagation();
-                const id = $(this).data('id');
-                const account = ALL_ACCOUNTS.find(a => a.id === id);
-                if (account) showAccountModal(account);
-            });
-        }
-    }
-    
-    function showAccountModal(account = null) {
-        $("#account-id").val(account ? account.id : '');
-        $("#accountModalLabel").text(account ? "编辑邮箱" : "添加邮箱");
-        $("#save-account-btn").text(account ? "保存更改" : "保存");
-
-        // 清空所有凭证字段
-        $("#api-client-id").val('');
-        $("#api-client-secret").val('');
-        $("#api-refresh-token").val('');
-        $("#gas-script-url").val('');
-
-
-        if (account) {
-            $("#account-name").val(account.name);
-            $("#account-alias").val(account.alias);
-            $("#account-type").val(account.type);
-            $("#account-status").prop("checked", account.status === 1);
-            
-            // [核心修改] 编辑时加载数据：由于 Secret/Token 敏感，仅加载 Client ID 和 GAS URL，并要求用户重新输入 Secret/Token
-            if (account.type.includes('API') && account.api_config_display) {
-                 // 列表显示字段是 ClientID, Secret, Token
-                 const parts = account.api_config_display.split(',').map(p => p.trim());
-                 // Client ID 通常很长，不会被截断，因此安全地加载它
-                 $("#api-client-id").val(parts[0] || '');
-                 // Secret 和 Token 之前已被 Worker 截断显示，为安全起见，这里不清空但要求用户重新输入
-                 // 注意：如果后端返回了 Client ID/Secret/Token，应该加载，但由于我们清除了敏感字段，这里只能加载 Client ID。
-                 // 这一步旨在安全地提示用户：编辑时需要重新提供敏感凭证。
-            }
-            
-            $("#gas-script-url").val(account.script_url || '');
-
-        } else {
-            $("#account-status").prop("checked", true);
-            $("#account-type").val("GAS");
+        function showToast(msg) {
+            const el = document.getElementById('mouse-toast');
+            el.innerText = msg;
+            el.style.left = lastMouseX + 10 + 'px';
+            el.style.top = lastMouseY + 10 + 'px';
+            el.style.display = 'block';
+            requestAnimationFrame(() => el.style.opacity = 1);
+            setTimeout(() => {
+                el.style.opacity = 0;
+                setTimeout(() => el.style.display = 'none', 300);
+            }, 2000);
         }
         
-        // 确保显示正确的配置块
-        toggleAccountTypeSettings();
-        
-        const modal = new bootstrap.Modal(document.getElementById('accountModal'));
-        modal.show();
-    }
-
-    async function handleSaveAccount() {
-        const id = $("#account-id").val();
-        const method = id ? 'PUT' : 'POST';
-        const url = id ? `${API_BASE}/api/accounts` : `${API_BASE}/api/accounts`;
-
-        const data = {
-            id: id ? parseInt(id) : undefined,
-            name: $("#account-name").val().trim(),
-            alias: $("#account-alias").val().trim(),
-            type: $("#account-type").val(),
-            script_url: $("#gas-script-url").val().trim(), // GAS URL
-            status: $("#account-status").prop("checked") ? 1 : 0,
-            
-            // [核心修改] 将独立的 API 凭证字段发送到后端
-            clientId: $("#api-client-id").val().trim(),
-            clientSecret: $("#api-client-secret").val().trim(),
-            refreshToken: $("#api-refresh-token").val().trim()
-        };
-        
-        if (!data.name) {
-            showToast("邮箱名称不能为空", 'error');
-            return;
+        function copyText(text) {
+            if (!text || text === 'null' || text === '-') return;
+            navigator.clipboard.writeText(text)
+                .then(() => showToast("已复制！"))
+                .catch(() => showToast("复制失败"));
         }
 
-        try {
-            const resp = await fetch(url, {
-                method: method,
-                headers: getAuthHeader(),
-                body: JSON.stringify(data)
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '操作失败，请检查 Worker 日志'}));
-                showToast(`保存失败: ${err.error}`, 'error');
-                return;
-            }
-
-            showToast(`邮箱保存成功!`);
-            const modal = bootstrap.Modal.getInstance(document.getElementById('accountModal'));
-            modal.hide();
-            loadAccounts();
-
-        } catch (e) {
-            showToast("网络请求失败: " + e.message, 'error');
+        function toggleTaskLoop(id, isLoop) {
+            const task = cachedTasks.find(t => t.id === id);
+            if (!task) return;
+            const data = { ...task, is_loop: isLoop };
+            fetch(API_BASE + '/api/tasks', { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) })
+                .then(r => r.json()).then(res => {
+                    if(res.ok) { showToast("循环状态已更新"); task.is_loop = isLoop; }
+                    else { showToast("更新失败: " + res.error); loadTasks(); }
+                });
         }
-    }
-    
-    function handleAccountCheckboxChange() {
-        selectedAccountIds.clear();
-        $("#account-list input[type='checkbox']:checked").each(function() {
-            selectedAccountIds.add($(this).data('id'));
+        
+        function toggleAccountStatus(id, isActive) {
+            const acc = cachedAccounts.find(a => a.id === id);
+            if (!acc) return;
+            const data = { ...acc, status: isActive };
+            fetch(API_BASE + '/api/accounts', { method: 'PUT', headers: getHeaders(), body: JSON.stringify(data) })
+                .then(r => r.json()).then(res => {
+                    if(res.ok) { showToast(isActive ? "邮箱已启用" : "邮箱已禁用"); acc.status = isActive ? 1 : 0; }
+                    else { showToast("更新失败"); loadAccounts(); }
+                });
+        }
+        
+        function getSelectedAccountId() {
+            const name = $("#send-account-input").val();
+            const acc = cachedAccounts.find(a => a.name === name);
+            return acc ? acc.id : null;
+        }
+
+        $("#admin-pass").on('keypress', function (e) {
+            if (e.which === 13) doLogin();
         });
-        $("#delete-selected-acc-btn").prop("disabled", selectedAccountIds.size === 0);
-    }
 
-    async function handleDeleteSelectedAccounts() {
-        if (selectedAccountIds.size === 0) return;
-        if (!confirm(`确定删除选中的 ${selectedAccountIds.size} 个邮箱吗？`)) return;
-
-        const ids = Array.from(selectedAccountIds).join(',');
-        try {
-             const resp = await fetch(`${API_BASE}/api/accounts?ids=${ids}`, {
-                method: 'DELETE',
-                headers: getAuthHeader()
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '删除失败'}));
-                showToast(`删除失败: ${err.error}`, 'error');
-                return;
-            }
-
-            showToast("选中的邮箱已删除!");
-            selectedAccountIds.clear();
-            $("#delete-selected-acc-btn").prop("disabled", true);
-            loadAccounts();
-
-        } catch (e) {
-            showToast("网络请求失败: " + e.message, 'error');
-        }
-    }
-
-    // --- 任务管理 ---
-    
-    function renderTaskAccountSelect(accounts) {
-        let html = '';
-        accounts.forEach(acc => {
-            html += `<option value="${acc.id}">${acc.name} (${acc.type})</option>`;
-        });
-        $("#task-account").html(html);
-    }
-    
-    function toggleTaskScheduleSettings() {
-        const type = $("#task-schedule-type").val();
-        if (type === 'loop') {
-            $(".loop-settings").show();
-        } else {
-            $(".loop-settings").hide();
-        }
-    }
-
-    async function loadTasks() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/tasks`, { headers: getAuthHeader() });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '加载任务失败'}));
-                showToast(`加载任务失败: ${err.error}`, 'error');
-                return;
-            }
-            const tasks = await resp.json();
+        function doLogin() {
+            const u = $("#admin-user").val();
+            const p = $("#admin-pass").val();
+            const token = btoa(u + ":" + p);
+            localStorage.setItem("auth_token", token);
             
+            fetch(API_BASE, { headers: { 'Authorization': 'Basic ' + token } })
+                .then(res => {
+                    if(res.ok) {
+                        $("#login-overlay").fadeOut();
+                        loadAccounts();
+                    } else {
+                        showToast("账号或密码错误");
+                    }
+                }).catch(()=> showToast("连接失败"));
+        }
+
+        function getHeaders() {
+            return {
+                'Authorization': 'Basic ' + localStorage.getItem("auth_token"),
+                'Content-Type': 'application/json'
+            };
+        }
+
+        function doLogout() {
+            localStorage.removeItem("auth_token");
+            location.reload();
+        }
+
+        function showSection(id) {
+            $(".content-section").removeClass("active");
+            $("#" + id).addClass("active");
+            $(".list-group-item").removeClass("active");
+            $(event.currentTarget).addClass("active");
+            
+            if(id === 'section-accounts') loadAccounts();
+            if(id === 'section-send') {
+                loadAccounts().then(() => loadTasks());
+            }
+            if(id === 'section-receive') loadInboxAccounts();
+        }
+
+        // --- 账户管理 ---
+        function loadAccounts() {
+            return fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    cachedAccounts = data;
+                    renderAccounts(data);
+                    
+                    let optionsHtml = '';
+                    data.forEach(acc => optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`);
+                    $("#account-list-options").html(optionsHtml);
+                });
+        }
+
+        function renderAccounts(data) {
             let html = '';
-            $("#task-count-badge").text(tasks.length);
-
-            if (tasks.length === 0) {
-                $("#task-list").html('<div class="p-3 text-center text-muted">暂无任务</div>');
-                return;
-            }
-
-            tasks.forEach(task => {
-                const account = ALL_ACCOUNTS.find(a => a.id === task.account_id) || { name: '未知邮箱', type: 'UNKNOWN' };
-                const nextRun = task.next_run_at ? new Date(task.next_run_at).toLocaleString('zh-CN', { hour12: false }) : 'N/A';
+            data.forEach(acc => {
+                const statusSwitch = `
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" ${acc.status ? 'checked' : ''} onchange="toggleAccountStatus(${acc.id}, this.checked)">
+                </div>`;
                 
-                let statusBadge = '';
-                if (task.status === 'pending') {
-                    statusBadge = `<span class="badge bg-warning text-dark">待执行</span>`;
-                } else if (task.status === 'completed') {
-                    statusBadge = `<span class="badge bg-success">已完成</span>`;
-                } else if (task.status === 'error') {
-                    statusBadge = `<span class="badge bg-danger">失败</span>`;
+                let apiDisplay = '-';
+                if (acc.client_id) {
+                    apiDisplay = `ID:${acc.client_id}, Secret:${acc.client_secret ? '******' : '-'}, Token:${acc.refresh_token}`;
+                } else if (acc.type.includes('API') && !acc.client_id) {
+                     apiDisplay = `<span class="text-muted">无配置或旧数据</span>`;
+                }
+                
+                let gasDisplay = '-';
+                if (acc.script_url && acc.script_url.startsWith('http')) {
+                    gasDisplay = `<span class="gas-url-cell cursor-pointer" onclick="copyText('${acc.script_url}')" title="${acc.script_url}">${acc.script_url}</span>`;
                 }
 
-                html += `
-                    <div class="task-list-item d-flex justify-content-between align-items-center p-3">
-                        <div class="d-flex align-items-center">
-                            <input type="checkbox" class="form-check-input me-3" data-id="${task.id}">
-                            <div>
-                                <div class="fw-bold">${task.subject || '无主题'} (To: ${task.to_email})</div>
-                                <div class="text-secondary small">
-                                    发件: ${account.name} (${account.type}) |
-                                    类型: ${task.schedule_type === 'loop' ? '循环' : '单次'} |
-                                    模式: ${task.execution_mode} |
-                                    状态: ${statusBadge}
+                let badgeClass = 'bg-secondary';
+                if (acc.type === 'API') badgeClass = 'bg-success';
+                else if (acc.type === 'GAS') badgeClass = 'bg-primary';
+                else if (acc.type === 'API/GAS') badgeClass = 'bg-info text-dark';
+
+                html += `<tr>
+                    <td><input type="checkbox" class="acc-check" value="${acc.id}"></td>
+                    <td class="cursor-pointer fw-bold" onclick="copyText('${acc.name}')">${acc.name}</td>
+                    <td class="cursor-pointer" onclick="copyText('${acc.alias}')">${acc.alias || '-'}</td>
+                    <td class="cursor-pointer" onclick="copyText('${acc.client_id},${acc.client_secret},${acc.refresh_token}')" title="点击复制">
+                        <div class="api-config-cell">${apiDisplay}</div>
+                    </td>
+                    <td>${gasDisplay}</td>
+                    <td><span class="badge ${badgeClass}">${acc.type}</span></td>
+                    <td>${statusSwitch}</td>
+                    <td>
+                        <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditModal(${acc.id})"><i class="fas fa-edit"></i></button> 
+                        <button class="btn btn-sm btn-light text-danger py-0" onclick="delAccount(${acc.id})"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            $("#account-list-body").html(html);
+        }
+        
+        function filterAccounts(text) {
+            text = text.toLowerCase();
+            const filtered = cachedAccounts.filter(acc => 
+                acc.name.toLowerCase().includes(text) || 
+                (acc.alias && acc.alias.toLowerCase().includes(text))
+            );
+            renderAccounts(filtered);
+        }
+
+        function batchDelAccounts() {
+            const ids = $(".acc-check:checked").map(function(){return this.value;}).get();
+            if(ids.length === 0) return showToast("请先选择");
+            if(confirm("确定删除选中邮箱?")) {
+                fetch(API_BASE + '/api/accounts?ids=' + ids.join(','), { method: 'DELETE', headers: getHeaders() })
+                    .then(() => { showToast("删除成功"); loadAccounts(); });
+            }
+        }
+
+        function exportAccounts() {
+             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cachedAccounts, null, 2));
+             const downloadAnchorNode = document.createElement('a');
+             downloadAnchorNode.setAttribute("href", dataStr);
+             downloadAnchorNode.setAttribute("download", "accounts_backup.json");
+             document.body.appendChild(downloadAnchorNode);
+             downloadAnchorNode.click();
+             downloadAnchorNode.remove();
+        }
+
+        // [新增] 批量导入相关函数
+        function openBatchAccountModal() {
+            $("#import-acc-json").val("");
+            $("#import-acc-file-input").val("");
+            new bootstrap.Modal(document.getElementById('batchAccountImportModal')).show();
+        }
+
+        function submitBatchAccountImport() {
+            const activeTab = $("#importTabs .active").attr("data-bs-target");
+            let jsonString = "";
+
+            if (activeTab === "#tab-paste") {
+                jsonString = $("#import-acc-json").val();
+                if (!jsonString.trim()) return showToast("请输入 JSON 内容");
+                processImport(jsonString);
+            } else {
+                const fileInput = document.getElementById('import-acc-file-input');
+                const file = fileInput.files[0];
+                if (!file) return showToast("请选择文件");
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    processImport(e.target.result);
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function processImport(jsonStr) {
+            try {
+                const json = JSON.parse(jsonStr);
+                if (!Array.isArray(json)) throw new Error("JSON 必须是数组格式");
+
+                fetch(API_BASE + '/api/accounts', {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(json)
+                }).then(r => r.json()).then(res => {
+                    if (res.ok) {
+                        bootstrap.Modal.getInstance(document.getElementById('batchAccountImportModal')).hide();
+                        alert(`导入完成！\n成功: ${res.imported}\n跳过: ${res.skipped}`);
+                        loadAccounts();
+                    } else {
+                        alert("导入失败: " + res.error);
+                    }
+                });
+            } catch(err) {
+                alert("JSON 格式错误: " + err.message);
+            }
+        }
+
+        // --- 任务管理 ---
+        function getExecutionMode() {
+            if ($("#pref-api").is(":checked")) return 'API';
+            if ($("#pref-gas").is(":checked")) return 'GAS';
+            return 'AUTO';
+        }
+
+        function saveTask() {
+            const id = $("#edit-task-id").val();
+            const accId = getSelectedAccountId();
+            if (!accId) { showToast("请填写正确的发件邮箱名称"); return; }
+
+            const data = {
+                account_id: accId,
+                to_email: $("#send-to").val(),
+                subject: $("#send-subject").val(),
+                content: $("#send-content").val(),
+                base_date: $("#date-a").val(),
+                delay_config: $("#range-b").val(),
+                is_loop: $("#loop-switch").is(":checked"),
+                execution_mode: getExecutionMode()
+            };
+
+            const method = id ? 'PUT' : 'POST';
+            if(id) data.id = id;
+
+            fetch(API_BASE + '/api/tasks', { method, headers: getHeaders(), body: JSON.stringify(data) }).then(() => {
+                showToast(id ? "修改成功" : "添加成功");
+                cancelEditTask();
+                loadTasks();
+            });
+        }
+
+        function sendNow() {
+            const accId = getSelectedAccountId();
+            if(!accId) { showToast("请填写正确的发件邮箱名称"); return; }
+
+            const data = {
+                account_id: accId,
+                to_email: $("#send-to").val(),
+                subject: $("#send-subject").val(),
+                content: $("#send-content").val(),
+                immediate: true,
+                execution_mode: getExecutionMode()
+            };
+            
+            const btn = $(event.target).closest('button');
+            const originalHtml = btn.html();
+            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> 发送中...');
+            
+            fetch(API_BASE + '/api/tasks', { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) })
+            .then(r => r.json())
+            .then(res => {
+                btn.prop('disabled', false).html(originalHtml);
+                if(res.ok) showToast("发送成功");
+                else showToast("失败: " + (res.error || '未知'));
+            })
+            .catch(() => {
+                btn.prop('disabled', false).html(originalHtml);
+                showToast("网络错误");
+            });
+        }
+
+        function loadTasks() {
+            fetch(API_BASE + '/api/tasks', { headers: getHeaders() })
+                .then(r => r.json())
+                .then(data => {
+                    cachedTasks = data;
+                    let html = '';
+                    data.forEach(task => {
+                        let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
+                        const statusMap = { 'pending': '等待中', 'success': '成功', 'error': '失败', 'running': '运行中' };
+                        const statusText = statusMap[task.status] || task.status;
+                        const acc = cachedAccounts.find(a => a.id == task.account_id);
+                        const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
+                        const loopSwitch = `
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" ${task.is_loop ? 'checked' : ''} onchange="toggleTaskLoop(${task.id}, this.checked)">
+                        </div>`;
+                        
+                        html += `<tr>
+                            <td><input type="checkbox" class="task-check" value="${task.id}"></td>
+                            <td>${accName}</td>
+                            <td><span class="text-truncate-cell" title="${task.subject||''}">${task.subject || '-'}</span></td>
+                            <td>${new Date(task.next_run_at).toLocaleString()}</td>
+                            <td>${loopSwitch}</td>
+                            <td class="${statusColor} fw-bold">${statusText}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary py-0" title="执行" onclick="manualRun(${task.id})"><i class="fas fa-play"></i></button>
+                                <button class="btn btn-sm btn-outline-secondary py-0" title="编辑" onclick="editTask(${task.id})"><i class="fas fa-edit"></i></button>
+                                <button class="btn btn-sm btn-outline-danger py-0" title="删除" onclick="delTask(${task.id})"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>`;
+                    });
+                    $("#task-list-body").html(html);
+                });
+        }
+
+        function editTask(id) {
+            const task = cachedTasks.find(t => t.id === id);
+            if(!task) return;
+            $("#edit-task-id").val(task.id);
+            const acc = cachedAccounts.find(a => a.id == task.account_id);
+            $("#send-account-input").val(acc ? acc.name : '');
+            $("#send-to").val(task.to_email);
+            $("#send-subject").val(task.subject);
+            $("#send-content").val(task.content);
+            $("#date-a").val(task.base_date ? new Date(task.base_date).toISOString().slice(0,16) : '');
+            $("#range-b").val(task.delay_config);
+            $("#loop-switch").prop("checked", !!task.is_loop);
+            let mode = task.execution_mode || 'AUTO';
+            $(`input[name="pref-mode"][id="pref-${mode.toLowerCase()}"]`).prop("checked", true);
+            $("#task-card-title").text("编辑任务 (ID: " + id + ")");
+            $("#btn-save-task").html('<i class="fas fa-save"></i> 更新任务');
+            $("#btn-cancel-edit").removeClass("d-none");
+            document.querySelector('.content-section.active').scrollIntoView();
+        }
+
+        function cancelEditTask() {
+            $("#edit-task-id").val("");
+            $("#task-card-title").text("创建任务 / 立即发送");
+            $("#btn-save-task").html('<i class="fas fa-clock"></i> 添加任务');
+            $("#btn-cancel-edit").addClass("d-none");
+            $("#send-account-input").val("");
+            $("#send-to").val("");
+            $("#send-subject").val("");
+            $("#send-content").val("");
+        }
+
+        function delTask(id) {
+            if(confirm("确定删除任务?")) {
+                fetch(API_BASE + '/api/tasks?id=' + id, { method: 'DELETE', headers: getHeaders() })
+                    .then(() => { showToast("已删除"); loadTasks(); });
+            }
+        }
+        
+        function batchDelTasks() {
+            const ids = $(".task-check:checked").map(function(){return this.value;}).get();
+            if(ids.length === 0) return showToast("请先选择");
+            if(confirm("确定删除选中任务?")) {
+                fetch(API_BASE + '/api/tasks?ids=' + ids.join(','), { method: 'DELETE', headers: getHeaders() })
+                    .then(() => { showToast("批量删除完成"); loadTasks(); });
+            }
+        }
+
+        function manualRun(id) {
+            if(!confirm("立即执行?")) return;
+            fetch(API_BASE + '/api/tasks', { method: 'PUT', headers: getHeaders(), body: JSON.stringify({ id: id, action: 'execute' }) })
+                .then(r=>r.json()).then(res=>{
+                if(res.ok) { showToast("执行成功"); loadTasks(); }
+                else showToast("失败: "+res.error);
+            });
+        }
+
+        function openBatchTaskModal() {
+            new bootstrap.Modal(document.getElementById('batchTaskModal')).show();
+        }
+        
+        function submitBatchTasks() {
+            try {
+                const json = JSON.parse($("#batch-task-json").val());
+                if(!Array.isArray(json)) throw new Error("必须是数组");
+                fetch(API_BASE + '/api/tasks', { method: 'POST', headers: getHeaders(), body: JSON.stringify(json) })
+                    .then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('batchTaskModal')).hide();
+                        showToast("批量添加成功");
+                        loadTasks();
+                    });
+            } catch(e) {
+                alert("JSON 格式错误: " + e.message);
+            }
+        }
+
+        function toggleAll(type) {
+            const checked = $("#check-all-" + type).is(":checked");
+            $("." + type + "-check").prop("checked", checked);
+        }
+
+        function openAddModal() {
+            $("#accModalTitle").text("添加邮箱");
+            $("#acc-id").val(""); 
+            $("#acc-name").val("");
+            $("#acc-alias").val("");
+            $("#acc-api-config").val(""); 
+            $("#acc-gas-url").val("");
+            $("#acc-status").prop("checked", true);
+            new bootstrap.Modal(document.getElementById('addAccountModal')).show();
+        }
+
+        function openEditModal(id) {
+            const acc = cachedAccounts.find(a => a.id === id);
+            if(!acc) return;
+            $("#accModalTitle").text("编辑邮箱");
+            $("#acc-id").val(acc.id);
+            $("#acc-name").val(acc.name);
+            $("#acc-alias").val(acc.alias);
+            if (acc.client_id) {
+                $("#acc-api-config").val(`${acc.client_id},${acc.client_secret},${acc.refresh_token}`);
+            } else {
+                $("#acc-api-config").val("");
+            }
+            $("#acc-gas-url").val(acc.script_url && acc.script_url.startsWith('http') ? acc.script_url : "");
+            $("#acc-status").prop("checked", acc.status == 1);
+            new bootstrap.Modal(document.getElementById('addAccountModal')).show();
+        }
+
+        function saveAccount() {
+            const id = $("#acc-id").val();
+
+            // --- 修改 1：获取值并自动计算账号类型 ---
+            const apiConfig = $("#acc-api-config").val().trim();
+            const gasUrl = $("#acc-gas-url").val().trim();
+            
+            let type = "";
+            if (apiConfig && gasUrl) {
+                type = "API/GAS";
+            } else if (apiConfig) {
+                type = "API";
+            } else if (gasUrl) {
+                type = "GAS";
+            } else {
+                showToast("请至少填写 API 配置或 GAS URL 其中一项");
+                return;
+            }
+
+            const data = {
+                name: $("#acc-name").val(),
+                alias: $("#acc-alias").val(),
+                api_config: apiConfig,
+                gas_url: gasUrl,
+                type: type, // 关键：显式提交类型给后端
+                status: $("#acc-status").is(":checked")
+            };
+            // --- 修改 1 结束 ---
+
+            const method = id ? 'PUT' : 'POST';
+            if(id) data.id = id;
+            
+            // 禁用按钮防止重复提交
+            const btn = $(event.target);
+            if(btn.length) btn.prop('disabled', true);
+
+            fetch(API_BASE + '/api/accounts', { method, headers: getHeaders(), body: JSON.stringify(data) })
+            .then(r => r.json())
+            .then(res => {
+                if(btn.length) btn.prop('disabled', false); // 恢复按钮
+                
+                if (res.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
+                    showToast(id ? "更新成功" : "添加成功");
+                    
+                    // --- 修改 2：保存后刷新账号列表，如果是当前选中的账号，也刷新收信侧边栏 ---
+                    loadAccounts().then(() => {
+                        if (currentInboxAccountId == id) {
+                            loadInboxAccounts(); // 刷新侧边栏状态
+                        }
+                    });
+                    // --- 修改 2 结束 ---
+
+                } else {
+                    alert("错误: " + res.error);
+                }
+            })
+            .catch(err => {
+                if(btn.length) btn.prop('disabled', false);
+                showToast("网络请求失败");
+            });
+        }
+
+        function delAccount(id) {
+            if(confirm("删除此邮箱?")) {
+                fetch(API_BASE + '/api/accounts?id=' + id, { method: 'DELETE', headers: getHeaders() })
+                    .then(loadAccounts);
+            }
+        }
+
+        // --- 收件箱核心逻辑 (点击即同步) ---
+        function setLimit(num) {
+            currentEmailLimit = parseInt(num);
+            $(".limit-btn").removeClass("active");
+            $(".limit-btn").each(function() {
+                if ($(this).text().includes(num + "封")) $(this).addClass("active");
+            });
+            $("#custom-limit-input").val(""); 
+
+            if (currentInboxAccountId) {
+                syncAndLoad(); 
+            } else {
+                showToast("请先在左侧选择一个邮箱");
+            }
+        }
+
+        function setCustomLimit(val) {
+            if (!val || val <= 0) return;
+            currentEmailLimit = parseInt(val);
+            $(".limit-btn").removeClass("active");
+            if (currentInboxAccountId) {
+                syncAndLoad();
+            } else {
+                showToast("请先在左侧选择一个邮箱");
+            }
+        }
+
+        // [修改] 同步函数带上 Mode
+        function syncAndLoad() {
+            if (!currentInboxAccountId || !currentEmailLimit) return;
+
+            $("#email-content-view").html(`
+                <div class="text-center mt-5">
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-2 text-muted">正在通过 <b>${currentFetchMode}</b> 同步...</p>
+                </div>
+            `);
+
+            fetch(API_BASE + '/api/emails', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ 
+                    account_id: currentInboxAccountId,
+                    mode: currentFetchMode // [新增] 传递给后端
+                })
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.ok) {
+                    if(res.count > 0) showToast(`收取到 ${res.count} 封新邮件`);
+                    fetchEmailsAfterSync(); 
+                } else {
+                    $("#email-content-view").html(`
+                        <div class="text-center mt-5 text-danger">
+                            <i class="fas fa-times-circle fa-3x mb-3"></i>
+                            <p>同步失败: ${res.error}</p>
+                            <button class="btn btn-outline-secondary btn-sm mt-3" onclick="fetchEmailsAfterSync()">
+                                尝试加载旧缓存
+                            </button>
+                        </div>
+                    `);
+                }
+            })
+            .catch(err => {
+                $("#email-content-view").html(`<div class="text-center mt-5 text-danger"><p>网络错误: ${err.message}</p></div>`);
+            });
+        }
+
+        function fetchEmailsAfterSync() {
+            fetch(`${API_BASE}/api/emails?account_id=${currentInboxAccountId}&limit=${currentEmailLimit}`, { 
+                headers: getHeaders() 
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data || data.length === 0) {
+                    $("#email-content-view").html(`
+                        <div class="text-center mt-5 text-muted">
+                            <i class="fas fa-inbox fa-3x mb-3"></i>
+                            <p>暂无邮件</p>
+                        </div>`);
+                    return;
+                }
+
+                let html = `<div class="p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                        <h5 class="m-0">最新收件 (显示 ${data.length} 封)</h5>
+                        <small class="text-muted">刚刚更新</small>
+                    </div>
+                    <div class="list-group">`;
+                
+                data.forEach(email => {
+                    const dateStr = new Date(email.received_at).toLocaleString();
+                    html += `
+                        <div class="list-group-item list-group-item-action flex-column align-items-start p-3 mb-2 shadow-sm border rounded">
+                            <div class="d-flex w-100 justify-content-between mb-2">
+                                <h6 class="mb-1 fw-bold text-primary">${email.subject || '(无主题)'}</h6>
+                                <small class="text-muted text-nowrap ms-2">${dateStr}</small>
+                            </div>
+                            <p class="mb-1 text-secondary small">发件人: ${email.sender || '未知'}</p>
+                            <div class="mt-2 p-2 bg-light rounded text-break" style="font-size: 0.9rem; white-space: pre-wrap;">${email.body || '(无内容)'}</div>
+                        </div>`;
+                });
+                
+                html += `</div></div>`;
+                $("#email-content-view").html(html);
+            });
+        }
+
+        function loadInboxAccounts() {
+            if (cachedAccounts.length > 0) {
+                renderInboxAccounts(cachedAccounts);
+            } else {
+                fetch(API_BASE + '/api/accounts', { headers: getHeaders() })
+                    .then(r => r.json())
+                    .then(data => {
+                        cachedAccounts = data;
+                        renderInboxAccounts(data);
+                    });
+            }
+        }
+
+        // [修改] 渲染收件箱账户列表 (带单选按钮)
+        function renderInboxAccounts(accounts) {
+            let html = '';
+            let index = 1; 
+            
+            accounts.forEach(acc => {
+                if (acc.status) {
+                    const hasApi = acc.type.includes('API');
+                    const hasGas = acc.type.includes('GAS');
+                    
+                    let apiDisabled = !hasApi ? 'disabled' : '';
+                    let gasDisabled = !hasGas ? 'disabled' : '';
+                    let apiChecked = '';
+                    let gasChecked = '';
+
+                    // 默认选中逻辑
+                    if (hasGas && !hasApi) {
+                        gasChecked = 'checked';
+                    } else {
+                        apiChecked = 'checked';
+                    }
+
+                    html += `
+                    <div class="list-group-item list-group-item-action py-2 account-row" id="acc-row-${acc.id}" onclick="selectAccount(${acc.id}, this)">
+                        <div class="row align-items-center g-0">
+                            <div class="col text-truncate">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-light text-secondary border me-2" style="min-width: 25px;">${index}</span>
+                                    <span class="fw-bold text-truncate" title="${acc.name}">${acc.name}</span>
                                 </div>
-                                <div class="text-secondary small mt-1">
-                                    下次执行: ${nextRun} ${task.is_loop ? `(延迟: ${task.delay_config} 天)` : ''}
+                            </div>
+                            <div class="col-auto ms-2">
+                                <div class="btn-group btn-group-sm" role="group" onclick="event.stopPropagation()">
+                                    <input type="radio" class="btn-check" name="mode_${acc.id}" id="mode_api_${acc.id}" value="API" ${apiChecked} ${apiDisabled} onchange="updateFetchMode(${acc.id}, 'API')">
+                                    <label class="btn btn-outline-success" for="mode_api_${acc.id}" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">API</label>
+
+                                    <input type="radio" class="btn-check" name="mode_${acc.id}" id="mode_gas_${acc.id}" value="GAS" ${gasChecked} ${gasDisabled} onchange="updateFetchMode(${acc.id}, 'GAS')">
+                                    <label class="btn btn-outline-primary" for="mode_gas_${acc.id}" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">GAS</label>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `;
-            });
-
-            $("#task-list").html(html);
-
-        } catch (e) {
-            showToast("加载任务时网络请求失败: " + e.message, 'error');
-        }
-    }
-    
-    function showTaskModal() {
-        $("#taskModalLabel").text("创建定时任务");
-        // 使用 jQuery reset 确保清空所有字段
-        $('#taskModal form').trigger('reset'); 
-        $("#task-schedule-type").val('once');
-        toggleTaskScheduleSettings();
-
-        // 默认首次发送时间为明天上午 9 点
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(9, 0, 0, 0);
-        const isoString = tomorrow.toISOString().substring(0, 16);
-        $("#task-base-date").val(isoString);
-
-        const modal = new bootstrap.Modal(document.getElementById('taskModal'));
-        modal.show();
-    }
-    
-    async function handleSaveTask() {
-        const data = {
-            account_id: parseInt($("#task-account").val()),
-            to_email: $("#task-to-email").val().trim(),
-            subject: $("#task-subject").val().trim(),
-            content: $("#task-content").val().trim(),
-            schedule_type: $("#task-schedule-type").val(),
-            execution_mode: $("#task-execution-mode").val(),
-            base_date: $("#task-base-date").val(),
-            delay_config: $("#task-delay-config").val().trim()
-        };
-
-        if (!data.account_id || !data.to_email) {
-            showToast("发件邮箱和收件人邮箱不能为空", 'error');
-            return;
-        }
-        if (data.schedule_type === 'loop' && !data.delay_config) {
-            showToast("循环任务必须填写延迟配置", 'error');
-            return;
-        }
-
-        try {
-            const resp = await fetch(`${API_BASE}/api/tasks`, {
-                method: 'POST',
-                headers: getAuthHeader(),
-                body: JSON.stringify(data)
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '创建任务失败'}));
-                showToast(`创建任务失败: ${err.error}`, 'error');
-                return;
-            }
-
-            showToast("定时任务创建成功!");
-            const modal = bootstrap.Modal.getInstance(document.getElementById('taskModal'));
-            modal.hide();
-            loadTasks();
-
-        } catch (e) {
-            showToast("网络请求失败: " + e.message, 'error');
-        }
-    }
-
-    function handleTaskCheckboxChange() {
-        selectedTaskIds.clear();
-        $("#task-list input[type='checkbox']:checked").each(function() {
-            selectedTaskIds.add($(this).data('id'));
-        });
-        $("#delete-selected-task-btn").prop("disabled", selectedTaskIds.size === 0);
-    }
-    
-    async function handleDeleteSelectedTasks() {
-        if (selectedTaskIds.size === 0) return;
-        if (!confirm(`确定删除选中的 ${selectedTaskIds.size} 个任务吗？`)) return;
-
-        const ids = Array.from(selectedTaskIds).join(',');
-        try {
-             const resp = await fetch(`${API_BASE}/api/tasks?ids=${ids}`, {
-                method: 'DELETE',
-                headers: getAuthHeader()
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '删除失败'}));
-                showToast(`删除失败: ${err.error}`, 'error');
-                return;
-            }
-
-            showToast("选中的任务已删除!");
-            selectedTaskIds.clear();
-            $("#delete-selected-task-btn").prop("disabled", true);
-            loadTasks();
-
-        } catch (e) {
-            showToast("网络请求失败: " + e.message, 'error');
-        }
-    }
-
-    // --- 收件箱功能 ---
-
-    // [核心修改] 统一账户选择函数，增加了 mode 参数
-    function selectAccount(accountId, element, mode) {
-        currentInboxAccountId = accountId;
-        currentFetchMode = mode; // 使用新的 mode 参数
-        
-        $(".account-row").removeClass("active");
-        $(element).addClass("active");
-        
-        currentEmailLimit = 0; 
-        $(".limit-btn").removeClass("active");
-        
-        $("#email-content-view").html(`
-            <div class="text-center mt-5 text-muted">
-                <i class="fas fa-hand-pointer fa-3x mb-3"></i>
-                <p>已选中邮箱: <b>${$(element).find('.fw-bold').text()}</b></p>
-                <p>当前模式: <span class="badge bg-secondary">${currentFetchMode}</span></p>
-                <p class="small mt-3">点击上方 "同步 X 封" 按钮<br>将自动同步并显示最新邮件</p>
-            </div>
-        `);
-    }
-
-    function updateFetchMode(accId, mode) {
-        if (currentInboxAccountId === accId) {
-            currentFetchMode = mode;
-            showToast("收件模式已切换为: " + mode);
-            // 立即更新显示
-            $(`#email-content-view p:nth-child(2) span`).text(mode);
-        }
-    }
-
-
-    let currentEmailLimit = 0;
-    
-    async function handleSyncEmails() {
-        if (!currentInboxAccountId) {
-            showToast("请先在左侧选择一个邮箱", 'error');
-            return;
-        }
-        
-        const limit = $(this).data('limit');
-        currentEmailLimit = limit;
-
-        $(".limit-btn").removeClass("active");
-        $(this).addClass("active");
-        
-        $("#email-content-view").html('<div class="text-center mt-5"><i class="fas fa-spinner fa-spin fa-3x mb-3 text-primary"></i><p>正在同步邮件...</p></div>');
-        showToast(`正在使用 ${currentFetchMode} 模式同步 ${limit} 封邮件...`);
-
-        try {
-            // 注意：API 路由不需要传递 mode，后端会根据 type 自动选择 API/GAS 模式
-            const resp = await fetch(`${API_BASE}/api/emails?account_id=${currentInboxAccountId}&limit=${limit}`, {
-                headers: getAuthHeader()
-            });
-
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({error: '同步失败'}));
-                throw new Error(err.error || '同步失败');
-            }
-            
-            const data = await resp.json();
-            
-            if (data.emails.length === 0) {
-                 $("#email-content-view").html('<div class="text-center mt-5 text-muted"><i class="fas fa-box-open fa-3x mb-3"></i><p>收件箱为空，或同步失败</p></div>');
-                 showToast("同步完成，但收件箱为空。", 'error');
-                 return;
-            }
-
-            let html = `<h6>已同步 ${data.emails.length} 封邮件 (本次新增 ${data.synced_count} 封)</h6><hr>`;
-            
-            data.emails.forEach(email => {
-                const date = new Date(email.received_at).toLocaleString('zh-CN', { hour12: false });
-                html += `
-                    <div class="email-list-item">
-                        <div class="fw-bold">${email.subject}</div>
-                        <div class="small text-secondary">发件人: ${email.sender}</div>
-                        <div class="small text-muted mb-2">时间: ${date}</div>
-                        <div class="border p-2 bg-light small overflow-auto" style="max-height: 100px;">
-                            ${email.body.substring(0, 300)}...
-                        </div>
-                    </div>
-                `;
+                    </div>`;
+                    index++;
+                }
             });
             
-            $("#email-content-view").html(html);
-            showToast(`同步成功! 已获取 ${data.emails.length} 封邮件。`);
+            if(html === '') html = '<div class="p-3 text-center text-muted small">无可用账号</div>';
+            $("#inbox-account-list").html(html);
+            $("#acc-count-badge").text(index - 1);
+        }
 
-        } catch (e) {
+        // [修改] 选择账户时同步模式
+        function selectAccount(accountId, element) {
+            currentInboxAccountId = accountId;
+            
+            // 获取当前账户选中的模式
+            const mode = $(`input[name="mode_${accountId}"]:checked`).val();
+            currentFetchMode = mode || 'API';
+
+            $(".account-row").removeClass("active");
+            $(element).addClass("active");
+            
+            currentEmailLimit = 0; 
+            $(".limit-btn").removeClass("active");
+            $("#custom-limit-input").val("");
+            
             $("#email-content-view").html(`
-                <div class="text-center mt-5 text-danger">
-                    <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
-                    <p>邮件同步失败</p>
-                    <p class="small text-danger">${e.message}</p>
-                    <p class="small text-muted mt-3">请检查 Worker 日志和邮箱配置是否正确。</p>
+                <div class="text-center mt-5 text-muted">
+                    <i class="fas fa-hand-pointer fa-3x mb-3"></i>
+                    <p>已选中邮箱: <b>${$(element).find('.fw-bold').text()}</b></p>
+                    <p>当前模式: <span class="badge bg-secondary">${currentFetchMode}</span></p>
+                    <p class="small mt-3">点击上方 "1封" / "3封" 按钮<br>将自动同步并显示最新邮件</p>
                 </div>
             `);
-            showToast("同步失败: " + e.message, 'error');
         }
-    }
-    
-    // 自动触发一次 Tab 加载，确保第一次进入页面数据能加载
-    $('a[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
-        if ($(e.target).attr('href') === '#tab-tasks') {
-            loadTasks();
+
+        // [新增] 手动更新模式
+        function updateFetchMode(accId, mode) {
+            if (currentInboxAccountId === accId) {
+                currentFetchMode = mode;
+                showToast("收件模式已切换为: " + mode);
+            }
         }
-    });
 
-</script>
-
+        if(localStorage.getItem("auth_token")) {
+            $("#login-overlay").hide();
+            loadAccounts();
+        }
+    </script>
 </body>
 </html>
