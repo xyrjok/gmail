@@ -4,12 +4,6 @@
  * - DB (D1 Database)
  * - ADMIN_USERNAME
  * - ADMIN_PASSWORD
- * * 数据库变动:
- * 1. 需要 accounts 表 (原有)
- * 2. 需要 send_tasks 表 (原有)
- * 3. 需要 received_emails 表 (原有)
- * 4. [新增] 需要 account_auth 表 (用于存储每个账号独立的 OAuth 凭证)
- * SQL: CREATE TABLE IF NOT EXISTS account_auth (account_id INTEGER PRIMARY KEY, client_id TEXT, client_secret TEXT, refresh_token TEXT, updated_at INTEGER);
  */
 
 export default {
@@ -62,15 +56,45 @@ export default {
     return user === env.ADMIN_USERNAME && pass === env.ADMIN_PASSWORD;
   }
   
+  // 支持单位解析 (格式: "min-max,unit" 或 "val,unit" 或 兼容旧格式 "min-max")
   function calculateDelay(configStr) {
-      let min = 0, max = 0;
-      if (configStr && configStr.includes('-')) {
-          [min, max] = configStr.split('-').map(Number);
-      } else {
-          min = max = Number(configStr || 0);
+      if (!configStr) return 0;
+
+      // 1. 拆分数值和单位
+      // 兼容旧数据: 如果没有逗号，默认当作 'day'
+      let rangePart = configStr;
+      let unit = 'day'; 
+      
+      if (configStr.includes(',')) {
+          const parts = configStr.split(',');
+          rangePart = parts[0]; // 例如 "10-20" 或 "0"
+          unit = parts[1];      // "minute", "hour", "day"
       }
-      const days = Math.floor(Math.random() * (max - min + 1)) + min;
-      return days * 24 * 60 * 60 * 1000; 
+
+      // 2. 解析数值范围
+      let min = 0, max = 0;
+      if (rangePart.includes('-')) {
+          [min, max] = rangePart.split('-').map(Number);
+      } else {
+          min = max = Number(rangePart || 0);
+      }
+      
+      // 如果输入 0，直接返回 0 (准时发送)
+      if (min === 0 && max === 0) return 0;
+
+      // 3. 生成随机数
+      const randomValue = Math.floor(Math.random() * (max - min + 1)) + min;
+
+      // 4. 根据单位计算毫秒数
+      let multiplier = 1;
+      switch (unit) {
+          case 'minute': multiplier = 60 * 1000; break;
+          case 'hour':   multiplier = 60 * 60 * 1000; break;
+          case 'day':    multiplier = 24 * 60 * 60 * 1000; break;
+          default:       multiplier = 24 * 60 * 60 * 1000; // 默认按天
+      }
+      
+      return randomValue * multiplier;
   }
   
   // [核心] 获取账号的 OAuth 凭证 (从 account_auth 表)
@@ -117,15 +141,78 @@ export default {
   
   // --- 核心业务逻辑 ---
   
-  // 1. 发送邮件核心函数
-  async function executeSendEmail(env, account, toEmail, subject, content) {
+  // 1. 发送邮件核心函数 (修改版：默认API，无配置自动降级GAS；指定模式则强制)
+  async function executeSendEmail(env, account, toEmail, subject, content, mode) {
       const finalSubject = subject ? subject : "Remind";
       const finalContent = content ? content : "Reminder of current time: " + new Date().toUTCString();
   
       try {
-          if (account.type === 'GAS') {
-              // === GAS 模式 (保持原有逻辑) ===
-              let scriptUrl = account.script_url.trim();
+          // === 1. 确定最终使用的发送模式 ===
+          let useMode = mode; // 'API', 'GAS' 或 undefined/'AUTO'
+          
+          // 如果是自动模式 (AUTO) 或未指定，则根据是否有 API 配置来决定
+          if (!useMode || useMode === 'AUTO') {
+              // 检查该账号是否有 API 凭证记录
+              const authData = await getAccountAuth(env, account.id);
+              
+              // 只要有 refresh_token，就认为可以尝试 API 发送
+              if (authData && authData.refresh_token) {
+                  useMode = 'API';
+              } else {
+                  useMode = 'GAS';
+              }
+          }
+  
+          // === 2. 执行发送逻辑 ===
+          
+          if (useMode === 'API') {
+              // ------ API 模式 ------
+              const authData = await getAccountAuth(env, account.id);
+              if (!authData) {
+                  throw new Error("无 API 配置数据 (No Auth Data)");
+              }
+              
+              // 获取 Token
+              const accessToken = await getAccessToken(authData);
+  
+              // 构建邮件
+              const emailLines = [];
+              emailLines.push(`To: ${toEmail}`);
+              emailLines.push(`Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(finalSubject)))}?=`);
+              emailLines.push(`Content-Type: text/plain; charset="UTF-8"`);
+              emailLines.push(``);
+              emailLines.push(finalContent);
+              
+              const raw = btoa(unescape(encodeURIComponent(emailLines.join('\r\n'))))
+                          .replace(/\+/g, '-')
+                          .replace(/\//g, '_')
+                          .replace(/=+$/, '');
+  
+              // 发送
+              const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/send`, {
+                  method: 'POST',
+                  headers: { 
+                      'Authorization': `Bearer ${accessToken}`, 
+                      'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ raw: raw })
+              });
+  
+              if (!resp.ok) {
+                  const err = await resp.json();
+                  throw new Error(`API Error: ${err.error?.message || 'Unknown'}`);
+              }
+              return { success: true };
+              
+          } else {
+              // ------ GAS 模式 ------
+              let scriptUrl = account.script_url ? account.script_url.trim() : '';
+              
+              // 检查 URL 有效性 (防止 API 账号降级到 GAS 时用到占位符 URL)
+              if (!scriptUrl.startsWith("http")) {
+                  throw new Error("当前账号无有效的 GAS URL，无法使用 GAS 发送");
+              }
+  
               if (scriptUrl.includes('?')) {
                   if (!scriptUrl.endsWith('&')) scriptUrl += '&';
               } else {
@@ -149,87 +236,49 @@ export default {
               if (!resp.ok) throw new Error(`GAS HTTP Error: ${resp.status}`);
               if (text.trim().startsWith("<")) throw new Error("GAS返回了HTML。请检查URL是否正确");
               
-              // 简单的成功检查
+              // 成功判定
               if (text.includes("OK") || text.includes("Sent") || text.includes("成功")) return { success: true };
+              
+              // 尝试解析 JSON 错误
               try {
                   const json = JSON.parse(text);
                   if (json.result === 'success' || json.status === 'success') return { success: true };
                   else throw new Error(`GAS Refused: ${json.message || json.error || '未知错误'}`);
               } catch (e) {
-                  // 非JSON但包含特定关键字也算成功
                   if (!text.includes("OK") && !text.includes("Sent")) {
                       if (e.message.startsWith("GAS Refused")) throw e;
                       throw new Error(`GAS Response Invalid: ${text.substring(0, 50)}...`);
                   }
                   return { success: true };
               }
-  
-          } else if (account.type === 'API') {
-              // === API 模式 (使用独立鉴权) ===
-              
-              // 1. 获取该账号的授权信息
-              const authData = await getAccountAuth(env, account.id);
-              if (!authData) {
-                  throw new Error("No Auth Data found. Please edit account and enter 'ClientID,Secret,RefreshToken'");
-              }
-              
-              // 2. 换取 Access Token
-              const accessToken = await getAccessToken(authData);
-  
-              // 3. 构建邮件内容
-              const emailLines = [];
-              emailLines.push(`To: ${toEmail}`);
-              emailLines.push(`Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(finalSubject)))}?=`);
-              emailLines.push(`Content-Type: text/plain; charset="UTF-8"`);
-              emailLines.push(``);
-              emailLines.push(finalContent);
-              
-              const raw = btoa(unescape(encodeURIComponent(emailLines.join('\r\n'))))
-                          .replace(/\+/g, '-')
-                          .replace(/\//g, '_')
-                          .replace(/=+$/, '');
-  
-              // 4. 发送请求
-              const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/send`, {
-                  method: 'POST',
-                  headers: { 
-                      'Authorization': `Bearer ${accessToken}`, 
-                      'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({ raw: raw })
-              });
-  
-              if (!resp.ok) {
-                  const err = await resp.json();
-                  throw new Error(`API Error: ${err.error?.message || 'Unknown'}`);
-              }
-              return { success: true };
           }
       } catch (e) {
           return { success: false, error: e.message };
       }
-      return { success: false, error: "Unknown Account Type" };
   }
   
-  // 2. 智能账号查找函数
+  // 2. 智能账号查找函数 (已修复支持 API/GAS)
   async function findBestAccount(env, referenceAccountId, mode) {
       const refAccount = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(referenceAccountId).first();
       if (!refAccount) throw new Error("Reference account not found");
   
-      // 查找同名账号 (Load Balancing 基础)
+      // 查找同名账号
       const { results: allAccounts } = await env.DB.prepare("SELECT * FROM accounts WHERE name = ? AND status = 1").bind(refAccount.name).all();
       
       let targetAccount = null;
   
       if (mode === 'API') {
-          targetAccount = allAccounts.find(a => a.type === 'API');
+          // 允许 API 或 API/GAS
+          targetAccount = allAccounts.find(a => a.type === 'API' || a.type === 'API/GAS');
           if (!targetAccount) throw new Error(`No API account found for ${refAccount.name}`);
       } else if (mode === 'GAS') {
-          targetAccount = allAccounts.find(a => a.type === 'GAS');
+          // 允许 GAS 或 API/GAS
+          targetAccount = allAccounts.find(a => a.type === 'GAS' || a.type === 'API/GAS');
           if (!targetAccount) throw new Error(`No GAS account found for ${refAccount.name}`);
       } else {
-          // AUTO: 优先 API，其次 GAS
-          targetAccount = allAccounts.find(a => a.type === 'API');
+          // AUTO: 优先找支持 API 的 (含 API/GAS)
+          targetAccount = allAccounts.find(a => a.type === 'API' || a.type === 'API/GAS');
+          // 没找到则找 GAS
           if (!targetAccount) {
               targetAccount = allAccounts.find(a => a.type === 'GAS');
           }
@@ -239,7 +288,7 @@ export default {
       return targetAccount;
   }
   
-  // 3. [修改] 邮件同步函数 (支持 mode 参数强制指定方式)
+  // 3. 邮件同步函数
   async function syncEmails(env, accountId, mode) {
       const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(accountId).first();
       if (!account) throw new Error("Account not found");
@@ -247,7 +296,6 @@ export default {
       let messages = [];
   
       // 决策逻辑: 如果指定了 mode，则强制匹配；否则 fallback 到 account.type
-      // 注意：如果 mode 是 'API' 但 account.type 是 'GAS'，这里会尝试用 API 逻辑跑，可能会失败（除非该 GAS 账号其实也配了 API 表），这符合预期
       const useGas = (mode === 'GAS') || (!mode && account.type === 'GAS');
       const useApi = (mode === 'API') || (!mode && account.type === 'API');
   
@@ -266,7 +314,6 @@ export default {
           params.append('action', 'get'); 
           params.append('limit', '5');
           
-          // 自动补全 Token
           if (!scriptUrl.includes('token=')) params.append('token', '123456'); 
   
           const resp = await fetch(scriptUrl, {
@@ -399,7 +446,7 @@ export default {
     const method = req.method;
     const url = new URL(req.url);
     
-    // === [修复] GET 请求：关联 account_auth 表获取 API 配置 ===
+    // === GET 请求 ===
     if (method === 'GET') {
       const { results } = await env.DB.prepare(`
           SELECT accounts.*, account_auth.client_id, account_auth.client_secret, account_auth.refresh_token 
@@ -410,85 +457,75 @@ export default {
       return new Response(JSON.stringify(results), { headers: corsHeaders() });
     } 
     
+    // === POST 请求：添加账号 ===
     if (method === 'POST') {
       const data = await req.json();
   
-      // === [新增] 批量导入逻辑 ===
+      // === 批量导入 ===
       if (Array.isArray(data)) {
           let imported = 0;
           let skipped = 0;
-          
-          // 循环处理每个账户
           for (const acc of data) {
               if (!acc.name) continue;
-  
-              // 简单查重: 按 name 查
               const exists = await env.DB.prepare("SELECT 1 FROM accounts WHERE name = ?").bind(acc.name).first();
-              if (exists) {
-                  skipped++;
-                  continue;
-              }
+              if (exists) { skipped++; continue; }
   
-              // 处理 Auth / Script URL 存储格式
-              // 如果 JSON 里有 api_config 字段，优先用；否则尝试从 script_url 或 acc.api_config 获取
               const apiConfig = acc.api_config || (acc.script_url && acc.script_url.includes(',') ? acc.script_url : null);
               const gasUrl = acc.gas_url || (acc.script_url && acc.script_url.startsWith('http') ? acc.script_url : null);
               
-              // 决定存储在 accounts 表 script_url 字段的内容
-              const storedUrl = (acc.type === 'API' && apiConfig) 
-                  ? 'Using DB Auth (Imported)' 
-                  : (gasUrl || '');
+              const storedUrl = (acc.type === 'API') ? 'Using DB Auth (Imported)' : (gasUrl || '');
   
               const res = await env.DB.prepare(
                   "INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?) RETURNING id"
-              ).bind(acc.name, acc.alias || '', acc.type || 'API', storedUrl, 1).first(); // 默认启用
+              ).bind(acc.name, acc.alias || '', acc.type || 'API', storedUrl, 1).first();
   
-              // 存储 API 凭证
-              if (acc.type === 'API' && apiConfig) {
+              if (acc.type && acc.type.includes('API') && apiConfig) {
                   await saveAuthInfo(env, res.id, apiConfig);
               }
               imported++;
           }
-  
           return new Response(JSON.stringify({ ok: true, imported, skipped }), { headers: corsHeaders() });
       }
   
-      // === 原有单个添加逻辑 ===
-      const storedUrl = (data.type === 'API' && data.script_url.includes(',')) 
-          ? 'Using DB Auth (Secure)' 
-          : data.script_url;
+      // === 单个添加 ===
+      const rawApiConfig = data.api_config || (data.script_url && data.script_url.includes(',') ? data.script_url : null);
+      const rawGasUrl = data.gas_url || (data.script_url && !data.script_url.includes(',') ? data.script_url : null);
+      
+      let storedUrl = '';
+      if (data.type === 'API') {
+          storedUrl = 'Using DB Auth (Secure)';
+      } else {
+          storedUrl = rawGasUrl || ''; 
+      }
   
       const res = await env.DB.prepare("INSERT INTO accounts (name, alias, type, script_url, status) VALUES (?, ?, ?, ?, ?) RETURNING id")
         .bind(data.name, data.alias, data.type, storedUrl, data.status ? 1 : 0).first();
               
-      if (data.type === 'API') {
-          // 兼容: 如果 data.api_config 存在则用，否则用 script_url (旧逻辑)
-          const authPayload = data.api_config || data.script_url;
-          await saveAuthInfo(env, res.id, authPayload);
+      if (data.type && data.type.includes('API') && rawApiConfig) {
+          await saveAuthInfo(env, res.id, rawApiConfig);
       }
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
     }
   
+    // === PUT 请求：更新账号 ===
     if (method === 'PUT') {
       const data = await req.json();
-      const isUpdatingAuth = (data.type === 'API' && (data.api_config || (data.script_url && data.script_url.includes(','))));
       
-      // 如果是 API 且在更新 Auth，则 script_url 字段显示占位符；否则如果是 GAS，存 GAS URL
-      let storedUrl = data.script_url;
+      const rawApiConfig = data.api_config || (data.script_url && data.script_url.includes(',') ? data.script_url : null);
+      const rawGasUrl = data.gas_url || (data.script_url && !data.script_url.includes(',') ? data.script_url : null);
+      
+      let storedUrl = '';
       if (data.type === 'API') {
-           if (isUpdatingAuth) storedUrl = 'Using DB Auth (Updated)';
-           // 保持原样如果没传新的 auth
+           storedUrl = 'Using DB Auth (Updated)';
       } else {
-           // GAS: 确保使用 gas_url 或 script_url
-           storedUrl = data.gas_url || data.script_url; 
+           storedUrl = rawGasUrl || ''; 
       }
   
       await env.DB.prepare("UPDATE accounts SET name=?, alias=?, type=?, script_url=?, status=? WHERE id=?")
         .bind(data.name, data.alias, data.type, storedUrl, data.status ? 1 : 0, data.id).run();
       
-      if (data.type === 'API') {
-          const authPayload = data.api_config || data.script_url;
-          await saveAuthInfo(env, data.id, authPayload);
+      if (data.type && data.type.includes('API') && rawApiConfig) {
+          await saveAuthInfo(env, data.id, rawApiConfig);
       }
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
     }
@@ -496,7 +533,6 @@ export default {
     if (method === 'DELETE') {
       const id = url.searchParams.get('id');
       const ids = url.searchParams.get('ids'); 
-      
       if (ids) {
           const idList = ids.split(',').map(Number);
           await env.DB.batch([
@@ -528,9 +564,13 @@ export default {
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
            `);
            const batch = data.map(t => {
+              // [修复] 批量添加时，如果有 base_date，直接用 base_date，不加延迟
               let nextRun = Date.now();
-              if (t.base_date) nextRun = new Date(t.base_date).getTime();
-              if (t.delay_config) nextRun += calculateDelay(t.delay_config);
+              if (t.base_date) {
+                  nextRun = new Date(t.base_date).getTime();
+              } else {
+                  if (t.delay_config) nextRun += calculateDelay(t.delay_config);
+              }
               return stmt.bind(t.account_id, t.to_email, t.subject, t.content, t.base_date, t.delay_config, nextRun, t.is_loop, t.execution_mode || 'AUTO');
            });
            await env.DB.batch(batch);
@@ -542,17 +582,21 @@ export default {
       if (data.immediate) {
           try {
               const account = await findBestAccount(env, data.account_id, mode);
-              // [修复点] 传递 env
-              const result = await executeSendEmail(env, account, data.to_email, data.subject, data.content);
+              // [修复点] 传递 mode
+              const result = await executeSendEmail(env, account, data.to_email, data.subject, data.content, mode);
               return new Response(JSON.stringify({ ok: result.success, error: result.error }), { headers: corsHeaders() });
           } catch (e) {
               return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
           }
       }
       
+      // [修复] 单个添加时，如果有 base_date，严格按照 base_date 执行
       let nextRun = Date.now();
-      if (data.base_date) nextRun = new Date(data.base_date).getTime();
-      if (data.delay_config) nextRun += calculateDelay(data.delay_config);
+      if (data.base_date) {
+          nextRun = new Date(data.base_date).getTime();
+      } else {
+          if (data.delay_config) nextRun += calculateDelay(data.delay_config);
+      }
   
       await env.DB.prepare(`
         INSERT INTO send_tasks (account_id, to_email, subject, content, base_date, delay_config, next_run_at, is_loop, status, execution_mode)
@@ -565,22 +609,26 @@ export default {
     if (method === 'PUT') {
         const data = await req.json();
         
+        // [修改] 手动执行: 记录成功/失败次数
         if (data.action === 'execute') {
             const task = await env.DB.prepare("SELECT * FROM send_tasks WHERE id = ?").bind(data.id).first();
             if(task) {
                 try {
                     const mode = task.execution_mode || 'AUTO';
                     const account = await findBestAccount(env, task.account_id, mode);
-                    // [修复点] 传递 env
-                    const res = await executeSendEmail(env, account, task.to_email, task.subject, task.content);
+                    const res = await executeSendEmail(env, account, task.to_email, task.subject, task.content, mode);
                     
                     if (res.success) {
-                         await env.DB.prepare("UPDATE send_tasks SET status = 'success' WHERE id = ?").bind(task.id).run();
+                         // 成功: status='success', success_count + 1
+                         await env.DB.prepare("UPDATE send_tasks SET status = 'success', success_count = IFNULL(success_count, 0) + 1 WHERE id = ?").bind(task.id).run();
                          return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
                     } else {
+                         // 失败: status='error', fail_count + 1
+                         await env.DB.prepare("UPDATE send_tasks SET status = 'error', fail_count = IFNULL(fail_count, 0) + 1 WHERE id = ?").bind(task.id).run();
                          return new Response(JSON.stringify({ ok: false, error: res.error }), { headers: corsHeaders() });
                     }
                 } catch(e) {
+                    await env.DB.prepare("UPDATE send_tasks SET status = 'error', fail_count = IFNULL(fail_count, 0) + 1 WHERE id = ?").bind(task.id).run();
                     return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
                 }
             }
@@ -588,8 +636,14 @@ export default {
         }
   
         if (data.id) {
+            // [修复] 修改任务时，如果有 base_date，重置为该时间（不加延迟）
             let nextRun = Date.now();
-            if (data.base_date) nextRun = new Date(data.base_date).getTime();
+            if (data.base_date) {
+                nextRun = new Date(data.base_date).getTime();
+            } else {
+                 if (data.delay_config) nextRun += calculateDelay(data.delay_config);
+            }
+            
             await env.DB.prepare(`
               UPDATE send_tasks 
               SET account_id=?, to_email=?, subject=?, content=?, base_date=?, delay_config=?, is_loop=?, execution_mode=?, next_run_at=? 
@@ -628,10 +682,9 @@ export default {
          try {
              const data = await req.json();
              const accountId = data.account_id;
-             const mode = data.mode; // [新增] 获取 mode 参数
+             const mode = data.mode; 
              if (!accountId) throw new Error("Missing account_id");
              
-             // [修改] 传递 mode 给 syncEmails
              const count = await syncEmails(env, accountId, mode);
              return new Response(JSON.stringify({ ok: true, count: count }), { headers: corsHeaders() });
          } catch (e) {
@@ -669,29 +722,34 @@ export default {
           try {
               const mode = task.execution_mode || 'AUTO';
               const account = await findBestAccount(env, task.account_id, mode);
-              // [修复点] 传递 env
-              const res = await executeSendEmail(env, account, task.to_email, task.subject, task.content);
+              // [修复点] 传递 mode
+              const res = await executeSendEmail(env, account, task.to_email, task.subject, task.content, mode);
               
               if(!res.success) {
-                   await env.DB.prepare("UPDATE send_tasks SET status = 'error' WHERE id = ?").bind(task.id).run();
+                   // [修改] 失败: status='error', fail_count + 1
+                   await env.DB.prepare("UPDATE send_tasks SET status = 'error', fail_count = IFNULL(fail_count, 0) + 1 WHERE id = ?").bind(task.id).run();
                    continue;
               }
           } catch (e) {
               console.error(`Task ${task.id} failed:`, e);
-              await env.DB.prepare("UPDATE send_tasks SET status = 'error' WHERE id = ?").bind(task.id).run();
+              // [修改] 异常: status='error', fail_count + 1
+              await env.DB.prepare("UPDATE send_tasks SET status = 'error', fail_count = IFNULL(fail_count, 0) + 1 WHERE id = ?").bind(task.id).run();
               continue;
           }
   
           if (task.is_loop) {
               let nextRun = Date.now();
+              // [说明] 循环任务计算下次时间时，才需要加延迟
               if (task.delay_config) {
                   nextRun += calculateDelay(task.delay_config);
               } else {
                   nextRun += 24 * 60 * 60 * 1000;
               }
-              await env.DB.prepare("UPDATE send_tasks SET next_run_at = ? WHERE id = ?").bind(nextRun, task.id).run();
+              // [修改] 循环任务成功: success_count + 1, 更新 next_run_at
+              await env.DB.prepare("UPDATE send_tasks SET next_run_at = ?, success_count = IFNULL(success_count, 0) + 1 WHERE id = ?").bind(nextRun, task.id).run();
           } else {
-              await env.DB.prepare("UPDATE send_tasks SET status = 'success' WHERE id = ?").bind(task.id).run();
+              // [修改] 单次任务成功: status='success', success_count + 1
+              await env.DB.prepare("UPDATE send_tasks SET status = 'success', success_count = IFNULL(success_count, 0) + 1 WHERE id = ?").bind(task.id).run();
           }
       }
   }
