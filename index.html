@@ -66,8 +66,6 @@
         .split-view { display: flex; height: calc(100vh - 60px); }
         .col-c { width: 450px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
         .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
-        .email-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
-        .email-item:hover { background-color: #f1f1f1; }
         
         /* 登录遮罩 */
         #login-overlay {
@@ -276,7 +274,7 @@
                                             <th><input type="checkbox" id="check-all-task" onchange="toggleAll('task')"></th>
                                             <th>发件邮箱</th>
                                             <th>主题</th>
-                                            <th>下次运行</th>
+                                            <th>下次运行 (中国时间)</th>
                                             <th>循环</th>
                                             <th>状态</th>
                                             <th>操作</th>
@@ -433,6 +431,27 @@
         let currentEmailLimit = 0; 
         let currentInboxAccountId = null;
         let currentFetchMode = 'API'; 
+
+        // [新增] 格式化时间为中国时间字符串 (yyyy/MM/dd HH:mm:ss)
+        function formatChinaTime(ts) {
+            if (!ts) return '-';
+            return new Date(ts).toLocaleString('zh-CN', { 
+                timeZone: 'Asia/Shanghai', 
+                hour12: false,
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+
+        // [新增] 将 Date 对象转换为本地 ISO 格式 (YYYY-MM-DDTHH:mm) 用于 input回显
+        function toLocalISOString(date) {
+            const pad = (n) => n < 10 ? '0' + n : n;
+            return date.getFullYear() + '-' +
+                pad(date.getMonth() + 1) + '-' +
+                pad(date.getDate()) + 'T' +
+                pad(date.getHours()) + ':' +
+                pad(date.getMinutes());
+        }
 
         document.addEventListener('mousemove', (e) => {
             lastMouseX = e.pageX;
@@ -681,24 +700,30 @@
             return 'AUTO';
         }
 
-        // [修改] saveTask 支持组合单位
+        // [修改] saveTask: 发送前将时间转为标准 UTC 字符串
         function saveTask() {
             const id = $("#edit-task-id").val();
             const accId = getSelectedAccountId();
             if (!accId) { showToast("请填写正确的发件邮箱名称"); return; }
 
-            // [逻辑] 获取范围和单位，组合成字符串 "10-20,minute"
             const rangeVal = $("#range-b").val().trim();
             const unitVal = $("#delay-unit").val();
             const delayConfigStr = rangeVal ? (rangeVal + "," + unitVal) : "";
+
+            // [核心修正] 将本地时间输入转为 UTC 时间字符串发送给服务器
+            const localDateStr = $("#date-a").val();
+            let utcDateStr = "";
+            if (localDateStr) {
+                utcDateStr = new Date(localDateStr).toISOString();
+            }
 
             const data = {
                 account_id: accId,
                 to_email: $("#send-to").val(),
                 subject: $("#send-subject").val(),
                 content: $("#send-content").val(),
-                base_date: $("#date-a").val(),
-                delay_config: delayConfigStr, // 发送组合后的字符串
+                base_date: utcDateStr, // 发送 UTC 时间
+                delay_config: delayConfigStr,
                 is_loop: $("#loop-switch").is(":checked"),
                 execution_mode: getExecutionMode()
             };
@@ -709,6 +734,7 @@
             fetch(API_BASE + '/api/tasks', { method, headers: getHeaders(), body: JSON.stringify(data) }).then(() => {
                 showToast(id ? "修改成功" : "添加成功");
                 cancelEditTask();
+                // 强制刷新
                 loadTasks();
             });
         }
@@ -743,8 +769,10 @@
             });
         }
 
+        // [修改] loadTasks: 强制使用中国时区显示时间
         function loadTasks() {
-            fetch(API_BASE + '/api/tasks', { headers: getHeaders() })
+            // 加时间戳防止缓存
+            fetch(API_BASE + '/api/tasks?_t=' + new Date().getTime(), { headers: getHeaders() })
                 .then(r => r.json())
                 .then(data => {
                     cachedTasks = data;
@@ -760,11 +788,14 @@
                             <input class="form-check-input" type="checkbox" ${task.is_loop ? 'checked' : ''} onchange="toggleTaskLoop(${task.id}, this.checked)">
                         </div>`;
                         
+                        // [修正] 强制显示为中国时间
+                        const nextRunStr = formatChinaTime(task.next_run_at);
+
                         html += `<tr>
                             <td><input type="checkbox" class="task-check" value="${task.id}"></td>
                             <td>${accName}</td>
                             <td><span class="text-truncate-cell" title="${task.subject||''}">${task.subject || '-'}</span></td>
-                            <td>${new Date(task.next_run_at).toLocaleString()}</td>
+                            <td>${nextRunStr}</td>
                             <td>${loopSwitch}</td>
                             <td class="${statusColor} fw-bold">${statusText}</td>
                             <td>
@@ -778,7 +809,7 @@
                 });
         }
 
-        // [修改] editTask 支持回显单位
+        // [修改] editTask: 编辑时将 UTC 时间转回本地时间格式
         function editTask(id) {
             const task = cachedTasks.find(t => t.id === id);
             if(!task) return;
@@ -788,20 +819,30 @@
             $("#send-to").val(task.to_email);
             $("#send-subject").val(task.subject);
             $("#send-content").val(task.content);
-            $("#date-a").val(task.base_date ? new Date(task.base_date).toISOString().slice(0,16) : '');
             
-            // [逻辑] 解析 delay_config 回显到两个控件
+            // [核心修正] 处理时间回显
+            if (task.base_date) {
+                // 后台存的是 UTC ISO 字符串，解析为 Date 对象
+                const dateObj = new Date(task.base_date);
+                if (!isNaN(dateObj.getTime())) {
+                    // 转为本地 yyyy-MM-ddThh:mm 格式赋值给 input
+                    $("#date-a").val(toLocalISOString(dateObj));
+                } else {
+                    $("#date-a").val("");
+                }
+            } else {
+                $("#date-a").val("");
+            }
+            
             let rangeVal = "";
-            let unitVal = "day"; // 默认显示天
+            let unitVal = "day"; 
             
             if (task.delay_config) {
                 if (task.delay_config.includes(',')) {
-                    // 新格式: "10-20,minute"
                     const parts = task.delay_config.split(',');
                     rangeVal = parts[0];
                     unitVal = parts[1];
                 } else {
-                    // 旧格式: "10-20" (默认为天)
                     rangeVal = task.delay_config;
                     unitVal = "day";
                 }
@@ -827,9 +868,9 @@
             $("#send-to").val("");
             $("#send-subject").val("");
             $("#send-content").val("");
-            // [新增] 重置延迟设置
             $("#range-b").val("");
             $("#delay-unit").val("day"); 
+            $("#date-a").val("");
         }
 
         function delTask(id) {
@@ -1041,6 +1082,7 @@
             });
         }
 
+        // [修改] fetchEmailsAfterSync: 邮件时间也强制使用中国时区
         function fetchEmailsAfterSync() {
             fetch(`${API_BASE}/api/emails?account_id=${currentInboxAccountId}&limit=${currentEmailLimit}`, { 
                 headers: getHeaders() 
@@ -1064,7 +1106,9 @@
                     <div class="list-group">`;
                 
                 data.forEach(email => {
-                    const dateStr = new Date(email.received_at).toLocaleString();
+                    // [修正] 使用中国时区显示邮件接收时间
+                    const dateStr = formatChinaTime(email.received_at);
+
                     html += `
                         <div class="list-group-item list-group-item-action flex-column align-items-start p-3 mb-2 shadow-sm border rounded">
                             <div class="d-flex w-100 justify-content-between mb-2">
@@ -1108,7 +1152,6 @@
                     let apiChecked = '';
                     let gasChecked = '';
 
-                    // 默认选中逻辑
                     if (hasGas && !hasApi) {
                         gasChecked = 'checked';
                     } else {
@@ -1147,7 +1190,6 @@
         function selectAccount(accountId, element) {
             currentInboxAccountId = accountId;
             
-            // 获取当前账户选中的模式
             const mode = $(`input[name="mode_${accountId}"]:checked`).val();
             currentFetchMode = mode || 'API';
 
