@@ -264,6 +264,12 @@
                         <div class="card shadow-sm">
                             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                                 <span>任务队列</span>
+                                
+                                <div class="input-group input-group-sm mx-2" style="width: 200px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" class="form-control" placeholder="搜主题/收件人..." onkeyup="filterTasks(this.value)">
+                                </div>
+
                                 <div>
                                     <button class="btn btn-sm btn-outline-primary me-1" onclick="openBatchTaskModal()"><i class="fas fa-file-upload"></i> 批量添加</button>
                                     <button class="btn btn-sm btn-outline-danger" onclick="batchDelTasks()"><i class="fas fa-trash"></i> 批量删除</button>
@@ -305,6 +311,10 @@
                                 <span class="input-group-text">自定义</span>
                                 <input type="number" class="form-control" id="custom-limit-input" placeholder="输入数量" onchange="setCustomLimit(this.value)">
                             </div>
+                        </div>
+
+                        <div class="p-2 border-bottom bg-white">
+                            <input type="text" class="form-control form-control-sm" placeholder="搜索收件邮箱..." onkeyup="filterInboxAccounts(this.value)">
                         </div>
                         
                         <div class="p-2 text-muted small bg-light border-bottom d-flex justify-content-between align-items-center">
@@ -453,6 +463,17 @@
                 pad(date.getDate()) + 'T' +
                 pad(date.getHours()) + ':' +
                 pad(date.getMinutes());
+        }
+        
+        // [新增] HTML 转义工具函数，防止 <email> 被当做标签隐藏
+        function escapeHtml(text) {
+            if (!text) return text;
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
         }
 
         document.addEventListener('mousemove', (e) => {
@@ -702,18 +723,15 @@
             return 'AUTO';
         }
 
-        // [修改] saveTask: 发送前将时间转为标准 UTC 字符串
         function saveTask() {
             const id = $("#edit-task-id").val();
             const accId = getSelectedAccountId();
             if (!accId) { showToast("请填写正确的发件邮箱名称"); return; }
 
-            // 组合 "10-20,minute"
             const rangeVal = $("#range-b").val().trim();
             const unitVal = $("#delay-unit").val();
             const delayConfigStr = rangeVal ? (rangeVal + "," + unitVal) : "";
 
-            // [核心修正] 将本地时间输入转为 UTC 时间字符串发送给服务器
             const localDateStr = $("#date-a").val();
             let utcDateStr = "";
             if (localDateStr) {
@@ -771,53 +789,69 @@
             });
         }
 
-        // [修改] loadTasks: 强制使用中国时区 + 显示计数
+        // [修改] loadTasks 只负责数据获取，渲染逻辑分离
         function loadTasks() {
             fetch(API_BASE + '/api/tasks?_t=' + new Date().getTime(), { headers: getHeaders() })
                 .then(r => r.json())
                 .then(data => {
                     cachedTasks = data;
-                    let html = '';
-                    data.forEach(task => {
-                        let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
-                        const statusMap = { 'pending': '等待中', 'success': '成功', 'error': '失败', 'running': '运行中' };
-                        const statusText = statusMap[task.status] || task.status;
-                        
-                        // [新增] 显示计数
-                        const countsDisplay = `<div style="font-size: 0.75rem; color: #666; margin-top: 2px;">成功:${task.success_count||0} / 失败:${task.fail_count||0}</div>`;
-
-                        const acc = cachedAccounts.find(a => a.id == task.account_id);
-                        const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
-                        const loopSwitch = `
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" ${task.is_loop ? 'checked' : ''} onchange="toggleTaskLoop(${task.id}, this.checked)">
-                        </div>`;
-                        
-                        // [修正] 强制显示为中国时间
-                        const nextRunStr = formatChinaTime(task.next_run_at);
-
-                        html += `<tr>
-                            <td><input type="checkbox" class="task-check" value="${task.id}"></td>
-                            <td>${accName}</td>
-                            <td><span class="text-truncate-cell" title="${task.subject||''}">${task.subject || '-'}</span></td>
-                            <td>${nextRunStr}</td>
-                            <td>${loopSwitch}</td>
-                            <td class="${statusColor} fw-bold">
-                                ${statusText}
-                                ${countsDisplay}
-                            </td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-primary py-0" title="执行" onclick="manualRun(${task.id})"><i class="fas fa-play"></i></button>
-                                <button class="btn btn-sm btn-outline-secondary py-0" title="编辑" onclick="editTask(${task.id})"><i class="fas fa-edit"></i></button>
-                                <button class="btn btn-sm btn-outline-danger py-0" title="删除" onclick="delTask(${task.id})"><i class="fas fa-trash"></i></button>
-                            </td>
-                        </tr>`;
-                    });
-                    $("#task-list-body").html(html);
+                    renderTaskList(data);
                 });
         }
 
-        // [修改] editTask: 编辑时将 UTC 时间转回本地时间格式，并拆分单位
+        // [新增] 渲染任务列表，便于搜索过滤复用
+        function renderTaskList(taskList) {
+            let html = '';
+            taskList.forEach(task => {
+                let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
+                const statusMap = { 'pending': '等待中', 'success': '成功', 'error': '失败', 'running': '运行中' };
+                const statusText = statusMap[task.status] || task.status;
+                
+                const countsDisplay = `<div style="font-size: 0.75rem; color: #666; margin-top: 2px;">成功:${task.success_count||0} / 失败:${task.fail_count||0}</div>`;
+
+                const acc = cachedAccounts.find(a => a.id == task.account_id);
+                const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
+                const loopSwitch = `
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" ${task.is_loop ? 'checked' : ''} onchange="toggleTaskLoop(${task.id}, this.checked)">
+                </div>`;
+                
+                const nextRunStr = formatChinaTime(task.next_run_at);
+
+                html += `<tr>
+                    <td><input type="checkbox" class="task-check" value="${task.id}"></td>
+                    <td>${accName}</td>
+                    <td><span class="text-truncate-cell" title="${escapeHtml(task.subject||'')}">${escapeHtml(task.subject || '-')}</span></td>
+                    <td>${nextRunStr}</td>
+                    <td>${loopSwitch}</td>
+                    <td class="${statusColor} fw-bold">
+                        ${statusText}
+                        ${countsDisplay}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary py-0" title="执行" onclick="manualRun(${task.id})"><i class="fas fa-play"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary py-0" title="编辑" onclick="editTask(${task.id})"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-sm btn-outline-danger py-0" title="删除" onclick="delTask(${task.id})"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            $("#task-list-body").html(html);
+        }
+
+        // [新增] 任务列表模糊搜索
+        function filterTasks(text) {
+            const term = text.toLowerCase().trim();
+            if (!term) {
+                renderTaskList(cachedTasks);
+                return;
+            }
+            const filtered = cachedTasks.filter(t => 
+                (t.subject && t.subject.toLowerCase().includes(term)) ||
+                (t.to_email && t.to_email.toLowerCase().includes(term))
+            );
+            renderTaskList(filtered);
+        }
+
         function editTask(id) {
             const task = cachedTasks.find(t => t.id === id);
             if(!task) return;
@@ -828,7 +862,6 @@
             $("#send-subject").val(task.subject);
             $("#send-content").val(task.content);
             
-            // [核心修正] 处理时间回显
             if (task.base_date) {
                 const dateObj = new Date(task.base_date);
                 if (!isNaN(dateObj.getTime())) {
@@ -840,7 +873,6 @@
                 $("#date-a").val("");
             }
             
-            // [核心修正] 拆分数值和单位
             let rangeVal = "";
             let unitVal = "day"; 
             if (task.delay_config) {
@@ -1111,13 +1143,14 @@
                 data.forEach(email => {
                     const dateStr = formatChinaTime(email.received_at);
 
+                    // [修改] 使用 escapeHtml 处理发件人和主题，防止地址被隐藏
                     html += `
                         <div class="list-group-item list-group-item-action flex-column align-items-start p-3 mb-2 shadow-sm border rounded">
                             <div class="d-flex w-100 justify-content-between mb-2">
-                                <h6 class="mb-1 fw-bold text-primary">${email.subject || '(无主题)'}</h6>
+                                <h6 class="mb-1 fw-bold text-primary">${escapeHtml(email.subject || '(无主题)')}</h6>
                                 <small class="text-muted text-nowrap ms-2">${dateStr}</small>
                             </div>
-                            <p class="mb-1 text-secondary small">发件人: ${email.sender || '未知'}</p>
+                            <p class="mb-1 text-secondary small">发件人: ${escapeHtml(email.sender || '未知')}</p>
                             <div class="mt-2 p-2 bg-light rounded text-break" style="font-size: 0.9rem; white-space: pre-wrap;">${email.body || '(无内容)'}</div>
                         </div>`;
                 });
@@ -1187,6 +1220,18 @@
             if(html === '') html = '<div class="p-3 text-center text-muted small">无可用账号</div>';
             $("#inbox-account-list").html(html);
             $("#acc-count-badge").text(index - 1);
+        }
+        
+        // [新增] 收件箱左侧列表模糊搜索函数
+        function filterInboxAccounts(text) {
+            const term = text.toLowerCase().trim();
+            const filtered = cachedAccounts.filter(acc => 
+                acc.status && (
+                    acc.name.toLowerCase().includes(term) || 
+                    (acc.alias && acc.alias.toLowerCase().includes(term))
+                )
+            );
+            renderInboxAccounts(filtered);
         }
 
         function selectAccount(accountId, element) {
