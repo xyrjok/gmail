@@ -62,7 +62,7 @@
             padding-bottom: 10px;
         }
         
-        /* [修改] 收件箱分栏宽度增加到 450px */
+        /* 收件箱分栏 */
         .split-view { display: flex; height: calc(100vh - 60px); }
         .col-c { width: 450px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
         .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
@@ -125,7 +125,7 @@
             background-color: #e9ecef;
             color: #000;
             border-left: 4px solid var(--primary-blue);
-            border-color: #dee2e6 #dee2e6 #dee2e6 var(--primary-blue); /* 保持边框完整 */
+            border-color: #dee2e6 #dee2e6 #dee2e6 var(--primary-blue);
         }
     </style>
 </head>
@@ -220,8 +220,15 @@
                                         <input type="datetime-local" class="form-control" id="date-a">
                                     </div>
                                     <div class="col-6">
-                                        <label class="small text-muted">随机天数 (10-20)</label>
-                                        <input type="text" class="form-control" id="range-b" placeholder="10-20">
+                                        <label class="small text-muted">随机延迟 (0=准时)</label>
+                                        <div class="input-group input-group-sm">
+                                            <select class="form-select bg-light" id="delay-unit" style="max-width: 70px;">
+                                                <option value="minute">分</option>
+                                                <option value="hour">时</option>
+                                                <option value="day" selected>天</option>
+                                            </select>
+                                            <input type="text" class="form-control" id="range-b" placeholder="例: 10-20 或 0">
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="mb-3 d-flex align-items-center flex-wrap">
@@ -616,7 +623,7 @@
              downloadAnchorNode.remove();
         }
 
-        // [新增] 批量导入相关函数
+        // 批量导入相关函数
         function openBatchAccountModal() {
             $("#import-acc-json").val("");
             $("#import-acc-file-input").val("");
@@ -674,10 +681,16 @@
             return 'AUTO';
         }
 
+        // [修改] saveTask 支持组合单位
         function saveTask() {
             const id = $("#edit-task-id").val();
             const accId = getSelectedAccountId();
             if (!accId) { showToast("请填写正确的发件邮箱名称"); return; }
+
+            // [逻辑] 获取范围和单位，组合成字符串 "10-20,minute"
+            const rangeVal = $("#range-b").val().trim();
+            const unitVal = $("#delay-unit").val();
+            const delayConfigStr = rangeVal ? (rangeVal + "," + unitVal) : "";
 
             const data = {
                 account_id: accId,
@@ -685,7 +698,7 @@
                 subject: $("#send-subject").val(),
                 content: $("#send-content").val(),
                 base_date: $("#date-a").val(),
-                delay_config: $("#range-b").val(),
+                delay_config: delayConfigStr, // 发送组合后的字符串
                 is_loop: $("#loop-switch").is(":checked"),
                 execution_mode: getExecutionMode()
             };
@@ -765,6 +778,7 @@
                 });
         }
 
+        // [修改] editTask 支持回显单位
         function editTask(id) {
             const task = cachedTasks.find(t => t.id === id);
             if(!task) return;
@@ -775,7 +789,26 @@
             $("#send-subject").val(task.subject);
             $("#send-content").val(task.content);
             $("#date-a").val(task.base_date ? new Date(task.base_date).toISOString().slice(0,16) : '');
-            $("#range-b").val(task.delay_config);
+            
+            // [逻辑] 解析 delay_config 回显到两个控件
+            let rangeVal = "";
+            let unitVal = "day"; // 默认显示天
+            
+            if (task.delay_config) {
+                if (task.delay_config.includes(',')) {
+                    // 新格式: "10-20,minute"
+                    const parts = task.delay_config.split(',');
+                    rangeVal = parts[0];
+                    unitVal = parts[1];
+                } else {
+                    // 旧格式: "10-20" (默认为天)
+                    rangeVal = task.delay_config;
+                    unitVal = "day";
+                }
+            }
+            $("#range-b").val(rangeVal);
+            $("#delay-unit").val(unitVal);
+            
             $("#loop-switch").prop("checked", !!task.is_loop);
             let mode = task.execution_mode || 'AUTO';
             $(`input[name="pref-mode"][id="pref-${mode.toLowerCase()}"]`).prop("checked", true);
@@ -794,6 +827,9 @@
             $("#send-to").val("");
             $("#send-subject").val("");
             $("#send-content").val("");
+            // [新增] 重置延迟设置
+            $("#range-b").val("");
+            $("#delay-unit").val("day"); 
         }
 
         function delTask(id) {
@@ -876,7 +912,7 @@
         function saveAccount() {
             const id = $("#acc-id").val();
 
-            // --- 修改 1：获取值并自动计算账号类型 ---
+            // 获取值并自动计算账号类型
             const apiConfig = $("#acc-api-config").val().trim();
             const gasUrl = $("#acc-gas-url").val().trim();
             
@@ -897,35 +933,30 @@
                 alias: $("#acc-alias").val(),
                 api_config: apiConfig,
                 gas_url: gasUrl,
-                type: type, // 关键：显式提交类型给后端
+                type: type, 
                 status: $("#acc-status").is(":checked")
             };
-            // --- 修改 1 结束 ---
 
             const method = id ? 'PUT' : 'POST';
             if(id) data.id = id;
             
-            // 禁用按钮防止重复提交
             const btn = $(event.target);
             if(btn.length) btn.prop('disabled', true);
 
             fetch(API_BASE + '/api/accounts', { method, headers: getHeaders(), body: JSON.stringify(data) })
             .then(r => r.json())
             .then(res => {
-                if(btn.length) btn.prop('disabled', false); // 恢复按钮
+                if(btn.length) btn.prop('disabled', false); 
                 
                 if (res.ok) {
                     bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
                     showToast(id ? "更新成功" : "添加成功");
                     
-                    // --- 修改 2：保存后刷新账号列表，如果是当前选中的账号，也刷新收信侧边栏 ---
                     loadAccounts().then(() => {
                         if (currentInboxAccountId == id) {
-                            loadInboxAccounts(); // 刷新侧边栏状态
+                            loadInboxAccounts(); 
                         }
                     });
-                    // --- 修改 2 结束 ---
-
                 } else {
                     alert("错误: " + res.error);
                 }
@@ -943,7 +974,7 @@
             }
         }
 
-        // --- 收件箱核心逻辑 (点击即同步) ---
+        // --- 收件箱核心逻辑 ---
         function setLimit(num) {
             currentEmailLimit = parseInt(num);
             $(".limit-btn").removeClass("active");
@@ -970,7 +1001,6 @@
             }
         }
 
-        // [修改] 同步函数带上 Mode
         function syncAndLoad() {
             if (!currentInboxAccountId || !currentEmailLimit) return;
 
@@ -986,7 +1016,7 @@
                 headers: getHeaders(),
                 body: JSON.stringify({ 
                     account_id: currentInboxAccountId,
-                    mode: currentFetchMode // [新增] 传递给后端
+                    mode: currentFetchMode 
                 })
             })
             .then(r => r.json())
@@ -1064,7 +1094,6 @@
             }
         }
 
-        // [修改] 渲染收件箱账户列表 (带单选按钮)
         function renderInboxAccounts(accounts) {
             let html = '';
             let index = 1; 
@@ -1115,7 +1144,6 @@
             $("#acc-count-badge").text(index - 1);
         }
 
-        // [修改] 选择账户时同步模式
         function selectAccount(accountId, element) {
             currentInboxAccountId = accountId;
             
@@ -1140,7 +1168,6 @@
             `);
         }
 
-        // [新增] 手动更新模式
         function updateFetchMode(accId, mode) {
             if (currentInboxAccountId === accId) {
                 currentFetchMode = mode;
