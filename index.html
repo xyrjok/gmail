@@ -66,6 +66,8 @@
         .split-view { display: flex; height: calc(100vh - 60px); }
         .col-c { width: 450px; border-right: 1px solid #dee2e6; overflow-y: auto; background: #fff; }
         .col-d { flex: 1; padding: 20px; overflow-y: auto; background: #fff; }
+        .email-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .email-item:hover { background-color: #f1f1f1; }
         
         /* 登录遮罩 */
         #login-overlay {
@@ -276,7 +278,7 @@
                                             <th>主题</th>
                                             <th>下次运行 (中国时间)</th>
                                             <th>循环</th>
-                                            <th>状态</th>
+                                            <th>状态 (次数)</th>
                                             <th>操作</th>
                                         </tr>
                                     </thead>
@@ -706,6 +708,7 @@
             const accId = getSelectedAccountId();
             if (!accId) { showToast("请填写正确的发件邮箱名称"); return; }
 
+            // 组合 "10-20,minute"
             const rangeVal = $("#range-b").val().trim();
             const unitVal = $("#delay-unit").val();
             const delayConfigStr = rangeVal ? (rangeVal + "," + unitVal) : "";
@@ -722,7 +725,7 @@
                 to_email: $("#send-to").val(),
                 subject: $("#send-subject").val(),
                 content: $("#send-content").val(),
-                base_date: utcDateStr, // 发送 UTC 时间
+                base_date: utcDateStr, 
                 delay_config: delayConfigStr,
                 is_loop: $("#loop-switch").is(":checked"),
                 execution_mode: getExecutionMode()
@@ -734,7 +737,6 @@
             fetch(API_BASE + '/api/tasks', { method, headers: getHeaders(), body: JSON.stringify(data) }).then(() => {
                 showToast(id ? "修改成功" : "添加成功");
                 cancelEditTask();
-                // 强制刷新
                 loadTasks();
             });
         }
@@ -769,9 +771,8 @@
             });
         }
 
-        // [修改] loadTasks: 强制使用中国时区显示时间
+        // [修改] loadTasks: 强制使用中国时区 + 显示计数
         function loadTasks() {
-            // 加时间戳防止缓存
             fetch(API_BASE + '/api/tasks?_t=' + new Date().getTime(), { headers: getHeaders() })
                 .then(r => r.json())
                 .then(data => {
@@ -781,6 +782,10 @@
                         let statusColor = task.status === 'success' ? 'text-success' : (task.status === 'error' ? 'text-danger' : 'text-warning');
                         const statusMap = { 'pending': '等待中', 'success': '成功', 'error': '失败', 'running': '运行中' };
                         const statusText = statusMap[task.status] || task.status;
+                        
+                        // [新增] 显示计数
+                        const countsDisplay = `<div style="font-size: 0.75rem; color: #666; margin-top: 2px;">成功:${task.success_count||0} / 失败:${task.fail_count||0}</div>`;
+
                         const acc = cachedAccounts.find(a => a.id == task.account_id);
                         const accName = acc ? acc.name : `<span class="text-muted">ID:${task.account_id} (已删)</span>`;
                         const loopSwitch = `
@@ -797,7 +802,10 @@
                             <td><span class="text-truncate-cell" title="${task.subject||''}">${task.subject || '-'}</span></td>
                             <td>${nextRunStr}</td>
                             <td>${loopSwitch}</td>
-                            <td class="${statusColor} fw-bold">${statusText}</td>
+                            <td class="${statusColor} fw-bold">
+                                ${statusText}
+                                ${countsDisplay}
+                            </td>
                             <td>
                                 <button class="btn btn-sm btn-outline-primary py-0" title="执行" onclick="manualRun(${task.id})"><i class="fas fa-play"></i></button>
                                 <button class="btn btn-sm btn-outline-secondary py-0" title="编辑" onclick="editTask(${task.id})"><i class="fas fa-edit"></i></button>
@@ -809,7 +817,7 @@
                 });
         }
 
-        // [修改] editTask: 编辑时将 UTC 时间转回本地时间格式
+        // [修改] editTask: 编辑时将 UTC 时间转回本地时间格式，并拆分单位
         function editTask(id) {
             const task = cachedTasks.find(t => t.id === id);
             if(!task) return;
@@ -822,10 +830,8 @@
             
             // [核心修正] 处理时间回显
             if (task.base_date) {
-                // 后台存的是 UTC ISO 字符串，解析为 Date 对象
                 const dateObj = new Date(task.base_date);
                 if (!isNaN(dateObj.getTime())) {
-                    // 转为本地 yyyy-MM-ddThh:mm 格式赋值给 input
                     $("#date-a").val(toLocalISOString(dateObj));
                 } else {
                     $("#date-a").val("");
@@ -834,9 +840,9 @@
                 $("#date-a").val("");
             }
             
+            // [核心修正] 拆分数值和单位
             let rangeVal = "";
             let unitVal = "day"; 
-            
             if (task.delay_config) {
                 if (task.delay_config.includes(',')) {
                     const parts = task.delay_config.split(',');
@@ -952,8 +958,6 @@
 
         function saveAccount() {
             const id = $("#acc-id").val();
-
-            // 获取值并自动计算账号类型
             const apiConfig = $("#acc-api-config").val().trim();
             const gasUrl = $("#acc-gas-url").val().trim();
             
@@ -1082,7 +1086,6 @@
             });
         }
 
-        // [修改] fetchEmailsAfterSync: 邮件时间也强制使用中国时区
         function fetchEmailsAfterSync() {
             fetch(`${API_BASE}/api/emails?account_id=${currentInboxAccountId}&limit=${currentEmailLimit}`, { 
                 headers: getHeaders() 
@@ -1106,7 +1109,6 @@
                     <div class="list-group">`;
                 
                 data.forEach(email => {
-                    // [修正] 使用中国时区显示邮件接收时间
                     const dateStr = formatChinaTime(email.received_at);
 
                     html += `
@@ -1221,6 +1223,13 @@
             $("#login-overlay").hide();
             loadAccounts();
         }
+
+        // 自动刷新任务列表 (每30秒)
+        setInterval(() => {
+            if ($("#section-send").hasClass("active")) {
+                loadTasks();
+            }
+        }, 30000);
     </script>
 </body>
 </html>
