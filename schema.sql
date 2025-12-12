@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS send_tasks (
     is_loop         INTEGER DEFAULT 0,
     status          TEXT DEFAULT 'pending',
     execution_mode  TEXT DEFAULT 'AUTO',
-    subject         TEXT
+    subject         TEXT,
+    success_count   INTEGER DEFAULT 0,
+    fail_count      INTEGER DEFAULT 0
 );
 
 -- 3. 收件箱 (简单存储)
