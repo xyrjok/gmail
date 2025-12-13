@@ -239,6 +239,16 @@
                                         </div>
                                     </div>
                                 </div>
+                                
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="random-time-check">
+                                        <label class="form-check-label small text-muted" for="random-time-check">
+                                            随机生成发送时间 (时:分:秒 随机)
+                                        </label>
+                                    </div>
+                                </div>
+
                                 <div class="mb-3 d-flex align-items-center flex-wrap">
                                     <div class="form-check form-switch me-4">
                                         <input class="form-check-input" type="checkbox" id="loop-switch">
@@ -335,7 +345,7 @@
                         
                         <div class="p-2 text-muted small bg-light border-bottom d-flex justify-content-between align-items-center">
                             <span>邮箱账户列表</span>
-                            </div>
+                        </div>
                         
                         <div id="inbox-account-list" class="list-group list-group-flush flex-grow-1" style="font-size: 0.85rem; overflow-y: auto;"></div>
                         
@@ -903,16 +913,6 @@
 
         function getSelectedAccountId() {
             const name = $("#send-account-input").val();
-            // 在下拉列表中查找匹配的选项
-            // 注意：因为 datalist 只存了 name，如果两个账号重名会有问题。
-            // 建议：后续后端 type=simple 可以返回 hidden ID，或者这里先简单用名字匹配。
-            // 更好的做法是遍历 datalist 的 options，但这里为了保持逻辑，我们尝试反查。
-            // 由于现在没有全量 cachedAccounts，我们需要假设用户输入的是准确的 Name。
-            // 实际发件接口需要 ID。
-            // 临时解决方案：从 loadAllAccountNames 获取的数据里查 ID。
-            // 我们需要把 type=simple 的数据缓存一下用于反查 ID。
-            // 这里我们动态查一下 datalist 的 option 对应的 ID ? 
-            // 简便起见，我们在 loadAllAccountNames 时建立一个 name -> id 的映射。
             return window.accountNameMap ? window.accountNameMap[name] : null;
         }
 
@@ -949,7 +949,13 @@
 
             const rangeVal = $("#range-b").val().trim();
             const unitVal = $("#delay-unit").val();
-            const delayConfigStr = rangeVal ? (rangeVal + "," + unitVal) : "";
+            const isRandomTime = $("#random-time-check").is(":checked"); // 获取随机开关
+
+            let delayConfigStr = "";
+            if (rangeVal) {
+                delayConfigStr = rangeVal + "," + unitVal;
+                if (isRandomTime) delayConfigStr += ",R"; // 追加随机标记
+            }
 
             const localDateStr = $("#date-a").val();
             let utcDateStr = "";
@@ -965,7 +971,8 @@
                 base_date: utcDateStr, 
                 delay_config: delayConfigStr,
                 is_loop: $("#loop-switch").is(":checked"),
-                execution_mode: getExecutionMode()
+                execution_mode: getExecutionMode(),
+                random_time: isRandomTime // 传递给后端用于第一发
             };
 
             const method = id ? 'PUT' : 'POST';
@@ -989,7 +996,6 @@
             if(!task) return;
             $("#edit-task-id").val(task.id);
             
-            // 需要回显发件邮箱名，task 对象里有 account_name (后端 JOIN 查出来的)
             $("#send-account-input").val(task.account_name || '');
             
             $("#send-to").val(task.to_email);
@@ -1009,18 +1015,17 @@
             
             let rangeVal = "";
             let unitVal = "day"; 
+            let isRandom = false;
+
             if (task.delay_config) {
-                if (task.delay_config.includes(',')) {
-                    const parts = task.delay_config.split(',');
-                    rangeVal = parts[0];
-                    unitVal = parts[1];
-                } else {
-                    rangeVal = task.delay_config;
-                    unitVal = "day";
-                }
+                const parts = task.delay_config.split(',');
+                rangeVal = parts[0];
+                if (parts.length > 1) unitVal = parts[1];
+                if (parts.length > 2 && parts[2] === 'R') isRandom = true;
             }
             $("#range-b").val(rangeVal);
             $("#delay-unit").val(unitVal);
+            $("#random-time-check").prop("checked", isRandom); // 回显开关
             
             $("#loop-switch").prop("checked", !!task.is_loop);
             let mode = task.execution_mode || 'AUTO';
@@ -1043,6 +1048,7 @@
             $("#range-b").val("");
             $("#delay-unit").val("day"); 
             $("#date-a").val("");
+            $("#random-time-check").prop("checked", false);
         }
         
         function manualRun(id) {
