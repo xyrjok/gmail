@@ -362,9 +362,12 @@ export default {
   
           const accessToken = await getAccessToken(authData);
   
-          const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5`, {
+          // [修改点] 增加 q 参数过滤 label:inbox OR label:spam
+          const q = encodeURIComponent("label:inbox OR label:spam");
+          const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q=${q}`, {
               headers: { 'Authorization': `Bearer ${accessToken}` }
           });
+          
           if (!listResp.ok) throw new Error("Gmail API List Failed: " + listResp.status);
           const listData = await listResp.json();
           
