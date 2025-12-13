@@ -963,7 +963,11 @@
             const m = $("#delay-m").val().trim() || "0";
             const s = $("#delay-s").val().trim() || "0";
             const delayConfigStr = `${d}|${h}|${m}|${s}`; // 新格式: d|h|m|s
-
+            const checkLoop = $("#loop-switch").is(":checked");
+            if (checkLoop && d === "0" && h === "0" && m === "0" && s === "0") {
+                showToast("⚠️ 开启循环时，必须设置至少一项延迟时间");
+                return; // 阻止提交
+            }
             const localDateStr = $("#date-a").val();
             let utcDateStr = "";
             if (localDateStr) {
