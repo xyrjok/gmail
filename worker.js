@@ -56,39 +56,64 @@ export default {
     return user === env.ADMIN_USERNAME && pass === env.ADMIN_PASSWORD;
   }
   
-  // 支持单位解析
-  function calculateDelay(configStr) {
-      if (!configStr) return 0;
+  // [新增] 辅助函数：解析范围字符串 (例如 "10-20" 或 "5")
+  function getRandFromRange(str) {
+      if (!str) return 0;
+      // 如果是范围 "10-20"
+      if (String(str).includes('-')) {
+          const parts = str.split('-');
+          const min = parseInt(parts[0]) || 0;
+          const max = parseInt(parts[1]) || 0;
+          return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+      // 如果是固定值 "5"
+      return parseInt(str) || 0;
+  }
+
+  // [修改] 计算下次运行时间 (替代 calculateDelay)
+  // 支持格式: "dRange|hRange|mRange|sRange" (例如 "1-2|0-5|0-0|0-0")
+  // 也兼容旧格式 (为了不报错)
+  function calculateNextRun(baseTimeMs, configStr) {
+      if (!configStr) {
+          // 没填配置，默认 +1 天
+          return baseTimeMs + 86400000; 
+      }
   
-      let rangePart = configStr;
-      let unit = 'day'; 
-      
-      if (configStr.includes(',')) {
+      let addMs = 0;
+
+      // === 新版逻辑: Pipe 分隔 (Day|Hour|Min|Sec) ===
+      if (configStr.includes('|')) {
+          const parts = configStr.split('|'); // [day, hour, min, sec]
+          
+          const d = getRandFromRange(parts[0]);
+          const h = getRandFromRange(parts[1]);
+          const m = getRandFromRange(parts[2]);
+          const s = getRandFromRange(parts[3]);
+
+          addMs += d * 24 * 60 * 60 * 1000;
+          addMs += h * 60 * 60 * 1000;
+          addMs += m * 60 * 1000;
+          addMs += s * 1000;
+      } 
+      // === 旧版逻辑兼容 (Comma 分隔) ===
+      else if (configStr.includes(',')) {
+          // 兼容旧数据的逻辑
           const parts = configStr.split(',');
-          rangePart = parts[0]; 
-          unit = parts[1];      
-      }
-  
-      let min = 0, max = 0;
-      if (rangePart.includes('-')) {
-          [min, max] = rangePart.split('-').map(Number);
+          const val = getRandFromRange(parts[0]);
+          const unit = parts[1];
+          let multiplier = 24 * 60 * 60 * 1000; // default day
+          if (unit === 'minute') multiplier = 60 * 1000;
+          if (unit === 'hour') multiplier = 60 * 60 * 1000;
+          addMs = val * multiplier;
       } else {
-          min = max = Number(rangePart || 0);
+          // 纯数字默认当做天
+          addMs = getRandFromRange(configStr) * 86400000;
       }
-      
-      if (min === 0 && max === 0) return 0;
-  
-      const randomValue = Math.floor(Math.random() * (max - min + 1)) + min;
-  
-      let multiplier = 1;
-      switch (unit) {
-          case 'minute': multiplier = 60 * 1000; break;
-          case 'hour':   multiplier = 60 * 60 * 1000; break;
-          case 'day':    multiplier = 24 * 60 * 60 * 1000; break;
-          default:       multiplier = 24 * 60 * 60 * 1000; 
-      }
-      
-      return randomValue * multiplier;
+
+      // 如果计算出的增量为0 (例如填了0-0)，强制加1分钟防止死循环
+      if (addMs <= 0) addMs = 60000;
+
+      return baseTimeMs + addMs;
   }
   
   async function getAccountAuth(env, accountId) {
@@ -584,10 +609,11 @@ export default {
            `);
            const batch = data.map(t => {
               let nextRun = Date.now();
+              // 如果有起始日期，则基于起始日期；否则基于当前时间+随机延迟
               if (t.base_date) {
                   nextRun = new Date(t.base_date).getTime();
               } else {
-                  if (t.delay_config) nextRun += calculateDelay(t.delay_config);
+                  nextRun = calculateNextRun(Date.now(), t.delay_config);
               }
               return stmt.bind(t.account_id, t.to_email, t.subject, t.content, t.base_date, t.delay_config, nextRun, t.is_loop, t.execution_mode || 'AUTO');
            });
@@ -611,7 +637,7 @@ export default {
       if (data.base_date) {
           nextRun = new Date(data.base_date).getTime();
       } else {
-          if (data.delay_config) nextRun += calculateDelay(data.delay_config);
+          nextRun = calculateNextRun(Date.now(), data.delay_config);
       }
   
       await env.DB.prepare(`
@@ -653,7 +679,7 @@ export default {
             if (data.base_date) {
                 nextRun = new Date(data.base_date).getTime();
             } else {
-                 if (data.delay_config) nextRun += calculateDelay(data.delay_config);
+                 nextRun = calculateNextRun(Date.now(), data.delay_config);
             }
             
             await env.DB.prepare(`
@@ -791,12 +817,8 @@ export default {
           }
   
           if (task.is_loop) {
-              let nextRun = Date.now();
-              if (task.delay_config) {
-                  nextRun += calculateDelay(task.delay_config);
-              } else {
-                  nextRun += 24 * 60 * 60 * 1000;
-              }
+              // [核心] 循环逻辑: 调用 calculateNextRun 计算自定义随机间隔
+              let nextRun = calculateNextRun(Date.now(), task.delay_config);
               await env.DB.prepare("UPDATE send_tasks SET next_run_at = ?, success_count = IFNULL(success_count, 0) + 1 WHERE id = ?").bind(nextRun, task.id).run();
           } else {
               await env.DB.prepare("UPDATE send_tasks SET status = 'success', success_count = IFNULL(success_count, 0) + 1 WHERE id = ?").bind(task.id).run();
