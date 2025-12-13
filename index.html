@@ -279,6 +279,7 @@
                                 </div>
 
                                 <div>
+                                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="loadTasks(currentTaskPage)"><i class="fas fa-sync-alt"></i> 刷新</button>
                                     <button class="btn btn-sm btn-outline-primary me-1" onclick="openBatchTaskModal()"><i class="fas fa-file-upload"></i> 批量添加</button>
                                     <button class="btn btn-sm btn-outline-danger" onclick="batchDelTasks()"><i class="fas fa-trash"></i> 批量删除</button>
                                 </div>
@@ -1396,13 +1397,6 @@
             loadAccounts();
             loadAllAccountNames();
         }
-
-        // 自动刷新任务列表 (每30秒)
-        setInterval(() => {
-            if ($("#section-send").hasClass("active")) {
-                loadTasks(currentTaskPage);
-            }
-        }, 30000);
     </script>
 </body>
 </html>
