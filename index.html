@@ -838,17 +838,25 @@
             $("#task-list-body").html(html);
         }
 
-        // [新增] 任务列表模糊搜索
+        // [修改版] 任务列表模糊搜索 (支持：主题、收件人、发件账号名)
         function filterTasks(text) {
             const term = text.toLowerCase().trim();
             if (!term) {
                 renderTaskList(cachedTasks);
                 return;
             }
-            const filtered = cachedTasks.filter(t => 
-                (t.subject && t.subject.toLowerCase().includes(term)) ||
-                (t.to_email && t.to_email.toLowerCase().includes(term))
-            );
+            
+            const filtered = cachedTasks.filter(t => {
+                // 1. 获取该任务对应的发件账号名称
+                const acc = cachedAccounts.find(a => a.id == t.account_id);
+                const accName = acc ? acc.name.toLowerCase() : '';
+        
+                // 2. 匹配逻辑：主题 OR 收件人 OR 发件账号名
+                return (t.subject && t.subject.toLowerCase().includes(term)) ||
+                       (t.to_email && t.to_email.toLowerCase().includes(term)) ||
+                       (accName && accName.includes(term)); // [新增] 匹配发件人
+            });
+            
             renderTaskList(filtered);
         }
 
