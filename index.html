@@ -222,30 +222,36 @@
                                 <textarea class="form-control mb-2" id="send-content" rows="3" placeholder="不填默认: Reminder of current time + 时间"></textarea>
                                 <hr>
                                 <label class="form-label fw-bold text-muted small">定时与循环设置</label>
-                                <div class="row g-2 mb-2">
-                                    <div class="col-6">
-                                        <label class="small text-muted">起始日期</label>
-                                        <input type="datetime-local" class="form-control" id="date-a">
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="small text-muted">随机延迟 (0=准时)</label>
-                                        <div class="input-group input-group-sm">
-                                            <select class="form-select bg-light" id="delay-unit" style="max-width: 70px;">
-                                                <option value="minute">分</option>
-                                                <option value="hour">时</option>
-                                                <option value="day" selected>天</option>
-                                            </select>
-                                            <input type="text" class="form-control" id="range-b" placeholder="例: 10-20">
-                                        </div>
-                                    </div>
+                                <div class="mb-2">
+                                    <label class="small text-muted">起始日期 (不填=立即)</label>
+                                    <input type="datetime-local" class="form-control" id="date-a">
                                 </div>
                                 
-                                <div class="mb-3">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="random-time-check">
-                                        <label class="form-check-label small text-muted" for="random-time-check">
-                                            随机生成发送时间 (时:分:秒 随机)
-                                        </label>
+                                <label class="small text-muted fw-bold mt-2">随机延迟 (全部叠加，支持范围如 1-5)</label>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-d" placeholder="0">
+                                            <span class="input-group-text px-1">天</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-h" placeholder="0">
+                                            <span class="input-group-text px-1">时</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-m" placeholder="0">
+                                            <span class="input-group-text px-1">分</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-s" placeholder="0">
+                                            <span class="input-group-text px-1">秒</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -690,7 +696,11 @@
                 .then(r => r.json())
                 .then(data => {
                     let optionsHtml = '';
-                    data.forEach(acc => optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`);
+                    window.accountNameMap = {}; // 建立映射
+                    data.forEach(acc => {
+                        optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
+                        window.accountNameMap[acc.name] = acc.id;
+                    });
                     $("#account-list-options").html(optionsHtml);
                 });
         }
@@ -947,15 +957,12 @@
             const accId = getSelectedAccountId();
             if (!accId) { showToast("请填写正确的发件邮箱名称（需在列表中存在）"); return; }
 
-            const rangeVal = $("#range-b").val().trim();
-            const unitVal = $("#delay-unit").val();
-            const isRandomTime = $("#random-time-check").is(":checked"); // 获取随机开关
-
-            let delayConfigStr = "";
-            if (rangeVal) {
-                delayConfigStr = rangeVal + "," + unitVal;
-                if (isRandomTime) delayConfigStr += ",R"; // 追加随机标记
-            }
+            // [核心修改] 拼接 d|h|m|s 格式字符串
+            const d = $("#delay-d").val().trim() || "0";
+            const h = $("#delay-h").val().trim() || "0";
+            const m = $("#delay-m").val().trim() || "0";
+            const s = $("#delay-s").val().trim() || "0";
+            const delayConfigStr = `${d}|${h}|${m}|${s}`; // 新格式: d|h|m|s
 
             const localDateStr = $("#date-a").val();
             let utcDateStr = "";
@@ -971,8 +978,7 @@
                 base_date: utcDateStr, 
                 delay_config: delayConfigStr,
                 is_loop: $("#loop-switch").is(":checked"),
-                execution_mode: getExecutionMode(),
-                random_time: isRandomTime // 传递给后端用于第一发
+                execution_mode: getExecutionMode()
             };
 
             const method = id ? 'PUT' : 'POST';
@@ -1013,19 +1019,23 @@
                 $("#date-a").val("");
             }
             
-            let rangeVal = "";
-            let unitVal = "day"; 
-            let isRandom = false;
-
-            if (task.delay_config) {
+            // [核心修改] 回显 d|h|m|s
+            if (task.delay_config && task.delay_config.includes('|')) {
+                const parts = task.delay_config.split('|');
+                $("#delay-d").val(parts[0] || "0");
+                $("#delay-h").val(parts[1] || "0");
+                $("#delay-m").val(parts[2] || "0");
+                $("#delay-s").val(parts[3] || "0");
+            } else if (task.delay_config && task.delay_config.includes(',')) {
+                // 兼容旧格式显示 (虽然不太完美，但能看)
                 const parts = task.delay_config.split(',');
-                rangeVal = parts[0];
-                if (parts.length > 1) unitVal = parts[1];
-                if (parts.length > 2 && parts[2] === 'R') isRandom = true;
+                if(parts[1] === 'day') $("#delay-d").val(parts[0]);
+                else if(parts[1] === 'hour') $("#delay-h").val(parts[0]);
+                else if(parts[1] === 'minute') $("#delay-m").val(parts[0]);
+            } else {
+                // 纯数字当做天
+                $("#delay-d").val(task.delay_config || "0");
             }
-            $("#range-b").val(rangeVal);
-            $("#delay-unit").val(unitVal);
-            $("#random-time-check").prop("checked", isRandom); // 回显开关
             
             $("#loop-switch").prop("checked", !!task.is_loop);
             let mode = task.execution_mode || 'AUTO';
@@ -1045,10 +1055,13 @@
             $("#send-to").val("");
             $("#send-subject").val("");
             $("#send-content").val("");
-            $("#range-b").val("");
-            $("#delay-unit").val("day"); 
+            
+            $("#delay-d").val("");
+            $("#delay-h").val("");
+            $("#delay-m").val("");
+            $("#delay-s").val("");
+            
             $("#date-a").val("");
-            $("#random-time-check").prop("checked", false);
         }
         
         function manualRun(id) {
