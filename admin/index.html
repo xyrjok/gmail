@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail 管理系统 (Pro)</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="../assets/all.min.css" rel="stylesheet">
+    <link href="style.css" rel="stylesheet">
+</head>
+<body>
+
+    <div id="mouse-toast"></div>
+
+    <div id="login-overlay">
+        <div class="card p-4 shadow" style="width: 350px;">
+            <h4 class="text-center mb-3">系统登录</h4>
+            <input type="text" id="admin-user" class="form-control mb-2" placeholder="用户名">
+            <input type="password" id="admin-pass" class="form-control mb-3" placeholder="密码 (回车登录)">
+            <button class="btn btn-primary w-100" onclick="doLogin()">登录</button>
+        </div>
+    </div>
+
+    <div class="d-flex" id="wrapper">
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading text-center py-4 fs-4 border-bottom border-secondary">
+                <i class="fas fa-mail-bulk"></i> Gmail Manager
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="fas fa-users-cog me-2"></i> 邮箱管理</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="fas fa-paper-plane me-2"></i> 发件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="fas fa-inbox me-2"></i> 收件设置</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="fas fa-sign-out-alt me-2"></i> 退出登录</a>
+            </div>
+        </div>
+
+        <div id="page-content-wrapper">
+            
+            <div id="section-accounts" class="content-section active">
+                <h3 class="mb-4">邮箱管理</h3>
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+                            <button class="btn btn-sm btn-primary" onclick="openAddModal()"><i class="fas fa-plus"></i> 添加邮箱</button>
+                            <button class="btn btn-sm btn-danger" onclick="batchDelAccounts()"><i class="fas fa-trash"></i> 批量删除</button>
+                            
+                            <div class="input-group input-group-sm ms-2" style="width: 200px;">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" placeholder="搜索名称/别名..." onkeyup="filterAccounts(this.value)">
+                            </div>
+
+                            <div class="ms-auto">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="openBatchAccountModal()"><i class="fas fa-file-import"></i> 批量导入</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="exportAccounts()"><i class="fas fa-file-export"></i> 批量导出</button>
+                            </div>
+                        </div>
+                        
+                        <table class="table table-hover table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="check-all-acc" onchange="toggleAll('acc')"></th>
+                                    <th>名称</th>
+                                    <th>别名</th>
+                                    <th style="width: 25%">API 配置 (ID/Secret/Token)</th>
+                                    <th style="width: 20%">GAS URL</th>
+                                    <th>类型</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="account-list-body"></tbody>
+                        </table>
+                        
+                        <div class="card-footer bg-white d-flex justify-content-between align-items-center border-top-0 pt-3" id="acc-pagination-container">
+                            <small class="text-muted" id="acc-page-info">共 0 条</small>
+                            <div>
+                                <button class="btn btn-sm btn-outline-secondary" id="btn-prev-acc" onclick="changeAccountPage(-1)" disabled>上一页</button>
+                                <button class="btn btn-sm btn-outline-secondary ms-1" id="btn-next-acc" onclick="changeAccountPage(1)" disabled>下一页</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-send" class="content-section">
+                <h3 class="mb-4">发件设置 & 循环任务</h3>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card shadow-sm mb-3">
+                            <div class="card-header bg-white" id="task-card-title">创建任务 / 立即发送</div>
+                            <div class="card-body">
+                                <input type="hidden" id="edit-task-id">
+                                <label class="form-label text-muted small">发件邮箱</label>
+                                <input class="form-control mb-2" list="account-list-options" id="send-account-input" placeholder="输入名称搜索或点击选择...">
+                                <datalist id="account-list-options"></datalist>
+                                <label class="form-label text-muted small">收件人 (多个用逗号分隔)</label>
+                                <input type="text" class="form-control mb-2" id="send-to" placeholder="user@example.com">
+                                <label class="form-label text-muted small">发送主题</label>
+                                <input type="text" class="form-control mb-2" id="send-subject" placeholder="不填默认: Remind">
+                                <label class="form-label text-muted small">发送内容</label>
+                                <textarea class="form-control mb-2" id="send-content" rows="3" placeholder="不填默认: Reminder of current time + 时间"></textarea>
+                                <hr>
+                                <label class="form-label fw-bold text-muted small">定时与循环设置</label>
+                                <div class="mb-2">
+                                    <label class="small text-muted">起始日期 (不填=立即)</label>
+                                    <input type="datetime-local" class="form-control" id="date-a">
+                                </div>
+                                
+                                <label class="small text-muted fw-bold mt-2">随机延迟 (全部叠加，支持范围如 1-5)</label>
+                                <div class="row g-2 mb-3">
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-d" placeholder="0">
+                                            <span class="input-group-text px-1">天</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-h" placeholder="0">
+                                            <span class="input-group-text px-1">时</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-m" placeholder="0">
+                                            <span class="input-group-text px-1">分</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" class="form-control text-center" id="delay-s" placeholder="0">
+                                            <span class="input-group-text px-1">秒</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3 d-flex align-items-center flex-wrap">
+                                    <div class="form-check form-switch me-4">
+                                        <input class="form-check-input" type="checkbox" id="loop-switch">
+                                        <label class="form-check-label small text-muted" for="loop-switch">循环</label>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2 border-start ps-3 py-1">
+                                        <span class="text-muted small">模式:</span>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="radio" name="pref-mode" id="pref-auto" checked>
+                                            <label class="form-check-label small text-muted" for="pref-auto">自动</label>
+                                        </div>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="radio" name="pref-mode" id="pref-api">
+                                            <label class="form-check-label small text-muted" for="pref-api">API</label>
+                                        </div>
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="radio" name="pref-mode" id="pref-gas">
+                                            <label class="form-check-label small text-muted" for="pref-gas">GAS</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-primary flex-fill" id="btn-save-task" onclick="saveTask()"><i class="fas fa-clock"></i> 添加任务</button>
+                                    <button class="btn btn-secondary flex-fill d-none" id="btn-cancel-edit" onclick="cancelEditTask()">取消</button>
+                                    <button class="btn btn-success flex-fill" onclick="sendNow()"><i class="fas fa-paper-plane"></i> 立即发送</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                                <span>任务队列</span>
+                                
+                                <div class="input-group input-group-sm mx-2" style="width: 250px;">
+                                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                    <input type="text" class="form-control" placeholder="搜主题/收件人/发件箱..." onkeyup="filterTasks(this.value)">
+                                </div>
+
+                                <div>
+                                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="loadTasks(currentTaskPage)"><i class="fas fa-sync-alt"></i> 刷新</button>
+                                    <button class="btn btn-sm btn-outline-primary me-1" onclick="openBatchTaskModal()"><i class="fas fa-file-upload"></i> 批量添加</button>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="batchDelTasks()"><i class="fas fa-trash"></i> 批量删除</button>
+                                </div>
+                            </div>
+                            <div class="card-body p-0" style="overflow-x: auto;">
+                                <table class="table table-sm table-striped m-0">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="check-all-task" onchange="toggleAll('task')"></th>
+                                            <th>发件邮箱</th>
+                                            <th>主题</th>
+                                            <th>下次运行 (中国时间)</th>
+                                            <th>循环</th>
+                                            <th>状态 (次数)</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="task-list-body"></tbody>
+                                </table>
+                            </div>
+                            <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+                                <small class="text-muted" id="task-page-info">共 0 条</small>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-secondary" id="btn-prev-task" onclick="changeTaskPage(-1)" disabled>上一页</button>
+                                    <button class="btn btn-sm btn-outline-secondary ms-1" id="btn-next-task" onclick="changeTaskPage(1)" disabled>下一页</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-receive" class="content-section p-0">
+                <div class="split-view">
+                    <div class="col-c bg-light border-end">
+                        <div class="p-3 border-bottom bg-white">
+                            <label class="form-label small text-muted mb-2 fw-bold">显示最近邮件数</label>
+                            <div class="d-flex gap-2 mb-2">
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(1)">1封</button>
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(2)">2封</button>
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(3)">3封</button>
+                                <button class="btn btn-outline-primary btn-sm flex-fill limit-btn" onclick="setLimit(5)">5封</button>
+                            </div>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">自定义</span>
+                                <input type="number" class="form-control" id="custom-limit-input" placeholder="输入数量" onchange="setCustomLimit(this.value)">
+                            </div>
+                        </div>
+
+                        <div class="p-2 border-bottom bg-white">
+                            <input type="text" class="form-control form-control-sm" placeholder="搜索收件邮箱..." onkeyup="filterInboxAccounts(this.value)">
+                        </div>
+                        
+                        <div class="p-2 text-muted small bg-light border-bottom d-flex justify-content-between align-items-center">
+                            <span>邮箱账户列表</span>
+                        </div>
+                        
+                        <div id="inbox-account-list" class="list-group list-group-flush flex-grow-1" style="font-size: 0.85rem; overflow-y: auto;"></div>
+                        
+                        <div class="p-2 border-top bg-light d-flex justify-content-between align-items-center mt-auto">
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-prev-inbox" onclick="changeInboxPage(-1)" disabled><i class="fas fa-chevron-left"></i></button>
+                            <span class="small text-muted" id="inbox-page-info">1/1</span>
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-next-inbox" onclick="changeInboxPage(1)" disabled><i class="fas fa-chevron-right"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div class="col-d bg-white">
+                        <div id="email-content-view">
+                            <div class="text-center mt-5 text-muted">
+                                <i class="fas fa-inbox fa-3x mb-3"></i>
+                                <p>请在左侧选择邮箱查看邮件</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="modal fade" id="addAccountModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="accModalTitle">添加邮箱</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="acc-id">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">基本信息</label>
+                        <input type="text" class="form-control mb-2" id="acc-name" placeholder="邮箱名 (唯一)">
+                        <input type="text" class="form-control" id="acc-alias" placeholder="别名 (可选)">
+                    </div>
+                    
+                    <div class="mb-3 p-2 border rounded bg-light">
+                        <label class="form-label small fw-bold mb-1">Gmail API 设置 (可选)</label>
+                        <div class="form-text mb-2" style="font-size:0.75rem">格式: Client ID, Client Secret, Refresh Token (逗号分隔)</div>
+                        <textarea class="form-control" id="acc-api-config" rows="2" placeholder="ID,Secret,Token"></textarea>
+                    </div>
+
+                    <div class="mb-3 p-2 border rounded bg-light">
+                        <label class="form-label small fw-bold mb-1">Gmail App (GAS) 设置 (可选)</label>
+                        <input type="text" class="form-control" id="acc-gas-url" placeholder="https://script.google.com/macros/s/...">
+                    </div>
+
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="acc-status" checked>
+                        <label class="form-check-label text-muted">启用</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="saveAccount()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="batchTaskModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量添加任务 (JSON)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">格式: <code>[{"account_id":1, "to_email":"a@b.com", "subject":"Hi", ...}]</code></p>
+                    <textarea id="batch-task-json" class="form-control" rows="10" placeholder="在此粘贴 JSON 数组"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="submitBatchTasks()">提交</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="batchAccountImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入邮箱账户</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="importTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-paste" type="button">粘贴 JSON</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-file" type="button">上传文件</button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-paste">
+                            <p class="small text-muted">请粘贴 JSON 数组格式的账户数据：</p>
+                            <textarea id="import-acc-json" class="form-control" rows="10" placeholder='[{"name":"...", "api_config":"..."}]'></textarea>
+                        </div>
+                        <div class="tab-pane fade" id="tab-file">
+                            <div class="mb-3">
+                                <label for="import-acc-file-input" class="form-label">选择 JSON 文件</label>
+                                <input class="form-control" type="file" id="import-acc-file-input" accept=".json">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitBatchAccountImport()">开始导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
