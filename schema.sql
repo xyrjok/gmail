@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
     alias       TEXT,
-    type        TEXT CHECK(type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
+    type        TEXT CHECK (type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
     script_url  TEXT,
     config_json TEXT,
     status      INTEGER DEFAULT 1
@@ -41,9 +41,9 @@ CREATE TABLE IF NOT EXISTS received_emails (
 
 -- 创建独立的认证信息表
 CREATE TABLE IF NOT EXISTS account_auth (
-    account_id INTEGER PRIMARY KEY,
-    client_id TEXT,
-    client_secret TEXT,
-    refresh_token TEXT,
-    updated_at INTEGER
+    account_id     INTEGER PRIMARY KEY,
+    client_id      TEXT,
+    client_secret  TEXT,
+    refresh_token  TEXT,
+    updated_at     INTEGER
 );
