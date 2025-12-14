@@ -1,16 +1,20 @@
 const API_BASE = "https://gm.xyrj.dpdns.org";
 
-// 全局变量定义 (分页相关)
-let cachedAccounts = []; // 当前页的账号列表
+// ================== 全局变量定义 ==================
+
+// 1. 邮箱管理分页
+let cachedAccounts = []; 
 let currentAccountPage = 1;
 let currentAccountTotalPages = 1;
 let accountSearchTimer = null;
 
-let cachedTasks = []; // 当前页的任务列表
+// 2. 任务管理分页
+let cachedTasks = []; 
 let currentTaskPage = 1;
 let currentTaskTotalPages = 1;
 let taskSearchTimer = null;
 
+// 3. 收件查看分页
 let currentInboxPage = 1;
 let currentInboxTotalPages = 1;
 let inboxSearchTimer = null;
@@ -18,9 +22,15 @@ let currentInboxAccountId = null;
 let currentEmailLimit = 0; 
 let currentFetchMode = 'API'; 
 
+// 4. [新增] 收件规则管理
+let cachedRules = [];
+let ruleSearchTimer = null;
+
+// 鼠标位置 (用于 Toast)
 let lastMouseX = 0, lastMouseY = 0;
 
-// 工具函数
+// ================== 工具函数 ==================
+
 function formatChinaTime(ts) {
     if (!ts) return '-';
     return new Date(ts).toLocaleString('zh-CN', { 
@@ -48,6 +58,15 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function generateRandomString(length) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
 }
 
 document.addEventListener('mousemove', (e) => {
@@ -86,6 +105,8 @@ function getHeaders() {
     };
 }
 
+// ================== 登录/注销 ==================
+
 function doLogin() {
     const u = $("#admin-user").val();
     const p = $("#admin-pass").val();
@@ -97,7 +118,7 @@ function doLogin() {
             if(res.ok) {
                 $("#login-overlay").fadeOut();
                 loadAccounts();
-                loadAllAccountNames(); // 预加载发件人列表
+                loadAllAccountNames(); 
             } else {
                 showToast("账号或密码错误");
             }
@@ -109,7 +130,8 @@ function doLogout() {
     location.reload();
 }
 
-// 页面切换逻辑
+// ================== 页面切换逻辑 ==================
+
 function showSection(id) {
     $(".content-section").removeClass("active");
     $("#" + id).addClass("active");
@@ -119,8 +141,10 @@ function showSection(id) {
     if(id === 'section-accounts') {
         loadAccounts(currentAccountPage);
     }
+    if(id === 'section-rules') {
+        loadRules(); // [新增] 加载规则
+    }
     if(id === 'section-send') {
-        // 确保下拉列表有数据
         if ($("#account-list-options option").length === 0) {
             loadAllAccountNames();
         }
@@ -131,7 +155,7 @@ function showSection(id) {
     }
 }
 
-// ================== 邮箱管理 (分页 & 后端搜索) ==================
+// ================== 1. 邮箱管理 (Accounts) ==================
 
 function loadAccounts(page = 1) {
     const searchQuery = $("#section-accounts input[placeholder*='搜索']").val().trim();
@@ -145,10 +169,7 @@ function loadAccounts(page = 1) {
             const list = res.data || [];
             cachedAccounts = list; 
             currentAccountTotalPages = res.total_pages || 1;
-            
             renderAccounts(list);
-            
-            // 更新分页 UI
             $("#acc-page-info").text(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)`);
             $("#btn-prev-acc").prop("disabled", res.page <= 1);
             $("#btn-next-acc").prop("disabled", res.page >= res.total_pages);
@@ -200,7 +221,6 @@ function renderAccounts(data) {
     $("#account-list-body").html(html);
 }
 
-// 后端搜索防抖
 function filterAccounts(text) {
     if (accountSearchTimer) clearTimeout(accountSearchTimer);
     accountSearchTimer = setTimeout(() => {
@@ -215,13 +235,12 @@ function changeAccountPage(delta) {
     }
 }
 
-// 加载所有账号名称 (用于发件下拉列表)
 function loadAllAccountNames() {
     fetch(`${API_BASE}/api/accounts?type=simple`, { headers: getHeaders() })
         .then(r => r.json())
         .then(data => {
             let optionsHtml = '';
-            window.accountNameMap = {}; // 建立映射
+            window.accountNameMap = {}; 
             data.forEach(acc => {
                 optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
                 window.accountNameMap[acc.name] = acc.id;
@@ -230,7 +249,6 @@ function loadAllAccountNames() {
         });
 }
 
-// 导出全量数据
 function exportAccounts() {
         const btn = $(event.target).closest('button');
         const orgHtml = btn.html();
@@ -256,7 +274,6 @@ function exportAccounts() {
 function toggleAccountStatus(id, isActive) {
     const acc = cachedAccounts.find(a => a.id === id);
     if (!acc) return;
-    // 乐观更新
     const originalStatus = acc.status;
     acc.status = isActive ? 1 : 0;
     
@@ -265,7 +282,7 @@ function toggleAccountStatus(id, isActive) {
             if(res.ok) { showToast(isActive ? "邮箱已启用" : "邮箱已禁用"); }
             else { 
                 showToast("更新失败"); 
-                acc.status = originalStatus; // 回滚
+                acc.status = originalStatus; 
                 loadAccounts(currentAccountPage); 
             }
         });
@@ -339,9 +356,8 @@ function saveAccount() {
         if (res.ok) {
             bootstrap.Modal.getInstance(document.getElementById('addAccountModal')).hide();
             showToast(id ? "更新成功" : "添加成功");
-            
             loadAccounts(currentAccountPage);
-            loadAllAccountNames(); // 刷新下拉列表
+            loadAllAccountNames(); 
         } else {
             alert("错误: " + res.error);
         }
@@ -368,7 +384,263 @@ function delAccount(id) {
     }
 }
 
-// ================== 发件任务 (分页 & 后端搜索) ==================
+// ================== 2. [新增] 收件规则管理 (Rules) ==================
+
+function loadRules() {
+    const searchQuery = $("#section-rules input[placeholder*='搜索']").val().trim();
+    
+    $("#rule-list-body").html('<tr><td colspan="8" class="text-center py-4"><div class="spinner-border text-primary spinner-border-sm"></div> 加载中...</td></tr>');
+
+    // 这里假设后端一次性返回所有数据（如果没有分页），或者我们自己在前端过滤
+    fetch(`${API_BASE}/api/rules`, { headers: getHeaders() })
+        .then(r => r.json())
+        .then(data => {
+            // 前端简单过滤
+            let filtered = data;
+            if (searchQuery) {
+                const lowerQ = searchQuery.toLowerCase();
+                filtered = data.filter(r => 
+                    r.name.toLowerCase().includes(lowerQ) || 
+                    (r.alias && r.alias.toLowerCase().includes(lowerQ)) ||
+                    r.query_code.toLowerCase().includes(lowerQ)
+                );
+            }
+            
+            cachedRules = filtered;
+            renderRules(filtered);
+            $("#rule-page-info").text(`共 ${filtered.length} 条规则`);
+        });
+}
+
+function renderRules(data) {
+    let html = '';
+    const host = window.location.host; // 获取当前域名
+    const protocol = window.location.protocol;
+
+    data.forEach(r => {
+        const fullLink = `${protocol}//${host}/${r.query_code}`;
+        
+        let validStr = '<span class="badge bg-success">永久有效</span>';
+        if (r.valid_until) {
+            const date = new Date(r.valid_until);
+            const isExpired = Date.now() > r.valid_until;
+            validStr = `<span class="badge ${isExpired ? 'bg-danger' : 'bg-info'}">${formatChinaTime(r.valid_until)}</span>`;
+        }
+
+        let matchStr = [];
+        if (r.match_sender) matchStr.push(`<span class="badge bg-light text-dark border">发: ${escapeHtml(r.match_sender)}</span>`);
+        if (r.match_receiver) matchStr.push(`<span class="badge bg-light text-dark border">收: ${escapeHtml(r.match_receiver)}</span>`);
+        if (r.match_body) matchStr.push(`<span class="badge bg-light text-dark border">文: ${escapeHtml(r.match_body)}</span>`);
+        if (matchStr.length === 0) matchStr.push('<span class="text-muted small">无限制</span>');
+
+        html += `<tr>
+            <td><input type="checkbox" class="rule-check" value="${r.id}"></td>
+            <td class="fw-bold">${escapeHtml(r.name)}</td>
+            <td>${escapeHtml(r.alias)}</td>
+            <td>
+                <div class="input-group input-group-sm" style="width: 140px;" onclick="copyLink('${fullLink}')" title="点击复制链接">
+                    <span class="input-group-text bg-light"><i class="fas fa-link"></i></span>
+                    <input type="text" class="form-control cursor-pointer bg-white" value="${r.query_code}" readonly>
+                </div>
+            </td>
+            <td>${r.fetch_limit || 5}</td>
+            <td>${validStr}</td>
+            <td>${matchStr.join(' ')}</td>
+            <td>
+                <button class="btn btn-sm btn-light text-primary py-0" onclick="openEditRuleModal(${r.id})"><i class="fas fa-edit"></i></button> 
+                <button class="btn btn-sm btn-light text-danger py-0" onclick="delRule(${r.id})"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>`;
+    });
+
+    if(data.length === 0) html = '<tr><td colspan="8" class="text-center text-muted">暂无规则</td></tr>';
+    $("#rule-list-body").html(html);
+}
+
+function filterRules(text) {
+    if (ruleSearchTimer) clearTimeout(ruleSearchTimer);
+    ruleSearchTimer = setTimeout(() => {
+        loadRules();
+    }, 300);
+}
+
+function copyLink(url) {
+    copyText(url);
+}
+
+function generateRandomRuleCode() {
+    $("#rule-code").val(generateRandomString(10));
+}
+
+function openAddRuleModal() {
+    $("#ruleModalTitle").text("添加收件规则");
+    $("#rule-id").val("");
+    $("#rule-name").val("");
+    $("#rule-alias").val("");
+    $("#rule-code").val(""); 
+    $("#rule-limit").val("5");
+    $("#rule-valid").val("");
+    $("#rule-match-sender").val("");
+    $("#rule-match-receiver").val("");
+    $("#rule-match-body").val("");
+    
+    new bootstrap.Modal(document.getElementById('addRuleModal')).show();
+}
+
+function openEditRuleModal(id) {
+    const rule = cachedRules.find(r => r.id === id);
+    if (!rule) return;
+
+    $("#ruleModalTitle").text("编辑收件规则");
+    $("#rule-id").val(rule.id);
+    $("#rule-name").val(rule.name);
+    $("#rule-alias").val(rule.alias);
+    $("#rule-code").val(rule.query_code);
+    $("#rule-limit").val(rule.fetch_limit || 5);
+    
+    if (rule.valid_until) {
+        $("#rule-valid").val(toLocalISOString(new Date(rule.valid_until)));
+    } else {
+        $("#rule-valid").val("");
+    }
+
+    $("#rule-match-sender").val(rule.match_sender || "");
+    $("#rule-match-receiver").val(rule.match_receiver || "");
+    $("#rule-match-body").val(rule.match_body || "");
+
+    new bootstrap.Modal(document.getElementById('addRuleModal')).show();
+}
+
+function saveRule() {
+    const id = $("#rule-id").val();
+    const name = $("#rule-name").val().trim();
+    const alias = $("#rule-alias").val().trim();
+
+    if (!name || !alias) {
+        return showToast("邮箱名和别名不能为空");
+    }
+
+    // 有效期处理
+    let validUntil = null;
+    const dateStr = $("#rule-valid").val();
+    if (dateStr) {
+        validUntil = new Date(dateStr).getTime();
+    }
+
+    const data = {
+        name: name,
+        alias: alias,
+        query_code: $("#rule-code").val().trim(), // 后端会处理为空自动生成
+        fetch_limit: parseInt($("#rule-limit").val()) || 5,
+        valid_until: validUntil,
+        match_sender: $("#rule-match-sender").val().trim(),
+        match_receiver: $("#rule-match-receiver").val().trim(),
+        match_body: $("#rule-match-body").val().trim()
+    };
+
+    const method = 'POST'; // 无论是新增还是修改，后端接口统一用POST处理（根据是否有id判断）
+    if(id) data.id = id;
+
+    const btn = $(event.target);
+    btn.prop('disabled', true);
+
+    fetch(API_BASE + '/api/rules', { method, headers: getHeaders(), body: JSON.stringify(data) })
+        .then(r => r.json())
+        .then(res => {
+            btn.prop('disabled', false);
+            if (res.success) {
+                bootstrap.Modal.getInstance(document.getElementById('addRuleModal')).hide();
+                showToast(id ? "规则已更新" : "规则已添加");
+                loadRules();
+            } else {
+                alert("错误: " + (res.error || "未知错误"));
+            }
+        })
+        .catch(err => {
+            btn.prop('disabled', false);
+            showToast("请求失败");
+        });
+}
+
+function delRule(id) {
+    if(!confirm("确定删除该规则吗？")) return;
+    // 后端 api/rules DELETE 接受数组
+    fetch(API_BASE + '/api/rules', { 
+        method: 'DELETE', 
+        headers: getHeaders(), 
+        body: JSON.stringify([id]) 
+    }).then(r => r.json()).then(res => {
+        if(res.success) {
+            showToast("删除成功");
+            loadRules();
+        } else {
+            showToast("删除失败");
+        }
+    });
+}
+
+function batchDelRules() {
+    const ids = $(".rule-check:checked").map(function(){return parseInt(this.value);}).get();
+    if(ids.length === 0) return showToast("请先选择规则");
+    
+    if(!confirm(`确定删除选中的 ${ids.length} 条规则吗？`)) return;
+
+    fetch(API_BASE + '/api/rules', { 
+        method: 'DELETE', 
+        headers: getHeaders(), 
+        body: JSON.stringify(ids) 
+    }).then(r => r.json()).then(res => {
+        if(res.success) {
+            showToast("批量删除成功");
+            loadRules();
+        } else {
+            showToast("删除失败");
+        }
+    });
+}
+
+function exportRules() {
+    window.open(`${API_BASE}/api/rules/export`);
+}
+
+function openBatchRuleModal() {
+    $("#import-rule-file-input").val("");
+    new bootstrap.Modal(document.getElementById('batchRuleImportModal')).show();
+}
+
+function submitBatchRuleImport() {
+    const fileInput = document.getElementById('import-rule-file-input');
+    const file = fileInput.files[0];
+    if (!file) return showToast("请选择 JSON 文件");
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const json = JSON.parse(e.target.result);
+            if (!Array.isArray(json)) throw new Error("JSON 必须是数组");
+            
+            fetch(API_BASE + '/api/rules/import', {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(json)
+            }).then(r => r.json()).then(res => {
+                if (res.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('batchRuleImportModal')).hide();
+                    alert(`导入完成! 成功导入 ${res.count} 条规则`);
+                    loadRules();
+                } else {
+                    alert("导入失败: " + res.error);
+                }
+            });
+        } catch(err) {
+            alert("文件解析错误: " + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+
+// ================== 3. 发件任务管理 (Tasks) ==================
 
 function loadTasks(page = 1) {
     const searchQuery = $("#section-send input[placeholder*='搜主题']").val().trim();
@@ -383,9 +655,7 @@ function loadTasks(page = 1) {
             const list = res.data || [];
             cachedTasks = list;
             currentTaskTotalPages = res.total_pages || 1;
-            
             renderTaskList(list);
-            
             $("#task-page-info").text(`第 ${res.page} / ${res.total_pages} 页 (共 ${res.total} 条)`);
             $("#btn-prev-task").prop("disabled", res.page <= 1);
             $("#btn-next-task").prop("disabled", res.page >= res.total_pages);
@@ -400,8 +670,6 @@ function renderTaskList(taskList) {
         const statusText = statusMap[task.status] || task.status;
         
         const countsDisplay = `<div style="font-size: 0.75rem; color: #666; margin-top: 2px;">成功:${task.success_count||0} / 失败:${task.fail_count||0}</div>`;
-
-        // 优先显示联表查询到的 account_name，如果没有则显示 ID
         const accName = task.account_name ? task.account_name : `<span class="text-muted">ID:${task.account_id}</span>`;
         
         const loopSwitch = `
@@ -451,21 +719,6 @@ function getSelectedAccountId() {
     return window.accountNameMap ? window.accountNameMap[name] : null;
 }
 
-// 修改 loadAllAccountNames 以支持 ID 查找
-function loadAllAccountNames() {
-    fetch(`${API_BASE}/api/accounts?type=simple`, { headers: getHeaders() })
-        .then(r => r.json())
-        .then(data => {
-            let optionsHtml = '';
-            window.accountNameMap = {}; // 建立映射
-            data.forEach(acc => {
-                optionsHtml += `<option value="${acc.name}">别名: ${acc.alias || '-'}</option>`;
-                window.accountNameMap[acc.name] = acc.id;
-            });
-            $("#account-list-options").html(optionsHtml);
-        });
-}
-
 function toggleTaskLoop(id, isLoop) {
     const task = cachedTasks.find(t => t.id === id);
     if (!task) return;
@@ -482,16 +735,15 @@ function saveTask() {
     const accId = getSelectedAccountId();
     if (!accId) { showToast("请填写正确的发件邮箱名称（需在列表中存在）"); return; }
 
-    // [核心修改] 拼接 d|h|m|s 格式字符串
     const d = $("#delay-d").val().trim() || "0";
     const h = $("#delay-h").val().trim() || "0";
     const m = $("#delay-m").val().trim() || "0";
     const s = $("#delay-s").val().trim() || "0";
-    const delayConfigStr = `${d}|${h}|${m}|${s}`; // 新格式: d|h|m|s
+    const delayConfigStr = `${d}|${h}|${m}|${s}`; 
     const checkLoop = $("#loop-switch").is(":checked");
     if (checkLoop && d === "0" && h === "0" && m === "0" && s === "0") {
         showToast("⚠️ 开启循环时，必须设置至少一项延迟时间");
-        return; // 阻止提交
+        return; 
     }
     const localDateStr = $("#date-a").val();
     let utcDateStr = "";
@@ -548,7 +800,6 @@ function editTask(id) {
         $("#date-a").val("");
     }
     
-    // [核心修改] 回显 d|h|m|s
     if (task.delay_config && task.delay_config.includes('|')) {
         const parts = task.delay_config.split('|');
         $("#delay-d").val(parts[0] || "0");
@@ -556,13 +807,11 @@ function editTask(id) {
         $("#delay-m").val(parts[2] || "0");
         $("#delay-s").val(parts[3] || "0");
     } else if (task.delay_config && task.delay_config.includes(',')) {
-        // 兼容旧格式显示 (虽然不太完美，但能看)
         const parts = task.delay_config.split(',');
         if(parts[1] === 'day') $("#delay-d").val(parts[0]);
         else if(parts[1] === 'hour') $("#delay-h").val(parts[0]);
         else if(parts[1] === 'minute') $("#delay-m").val(parts[0]);
     } else {
-        // 纯数字当做天
         $("#delay-d").val(task.delay_config || "0");
     }
     
@@ -572,7 +821,10 @@ function editTask(id) {
     $("#task-card-title").text("编辑任务 (ID: " + id + ")");
     $("#btn-save-task").html('<i class="fas fa-save"></i> 更新任务');
     $("#btn-cancel-edit").removeClass("d-none");
-    document.querySelector('.content-section.active').scrollIntoView();
+    // 切换到发送设置tab并滚动
+    if (!$('#section-send').hasClass('active')) {
+        showSection('section-send');
+    }
 }
 
 function cancelEditTask() {
@@ -648,7 +900,7 @@ function sendNow() {
     });
 }
 
-// ================== 收件管理 (分页 & 后端搜索) ==================
+// ================== 4. 收件管理 (Inbox) ==================
 
 function loadInboxAccounts(page = 1) {
     const searchQuery = $("#section-receive input[placeholder*='搜索收件邮箱']").val().trim();
@@ -661,9 +913,7 @@ function loadInboxAccounts(page = 1) {
         .then(res => {
             const list = res.data || []; 
             currentInboxTotalPages = res.total_pages || 1;
-            
             renderInboxAccounts(list);
-            
             $("#inbox-page-info").text(`${res.page}/${res.total_pages}`);
             $("#btn-prev-inbox").prop("disabled", res.page <= 1);
             $("#btn-next-inbox").prop("disabled", res.page >= res.total_pages);
@@ -863,7 +1113,8 @@ function fetchEmailsAfterSync() {
     });
 }
 
-// ================== 批量导入/处理 ==================
+// ================== 批量导入/处理 (Accounts/Tasks) ==================
+
 function openBatchAccountModal() {
     $("#import-acc-json").val("");
     $("#import-acc-file-input").val("");
