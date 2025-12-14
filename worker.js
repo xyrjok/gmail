@@ -9,6 +9,7 @@
 export default {
     async fetch(request, env, ctx) {
       const url = new URL(request.url);
+      const path = url.pathname;
       
       // 1. CORS 跨域处理
       if (request.method === "OPTIONS") {
@@ -20,17 +21,76 @@ export default {
           },
         });
       }
+
+      // --- [修改] 2. 公开邮件查询接口 (拦截非 API/Admin 的请求) ---
+      // 排除 /api/, /admin, /favicon.ico 等路径，且长度大于1（避免拦截根路径）
+      if (!path.startsWith('/api/') && !path.startsWith('/admin') && path !== '/' && path !== '/favicon.ico') {
+        const code = path.substring(1); // 去掉开头的 /
+        
+        // 查询规则
+        const rule = await env.DB.prepare('SELECT * FROM access_rules WHERE query_code = ?').bind(code).first();
+
+        if (rule) {
+            // 2.1 检查有效期
+            if (rule.valid_until && Date.now() > rule.valid_until) {
+                return new Response("该查询链接已失效 (Expired)", { status: 403, headers: { "Content-Type": "text/plain;charset=UTF-8" } });
+            }
+
+            // 2.2 构建查询条件
+            let sql = "SELECT * FROM received_emails WHERE 1=1";
+            const params = [];
+
+            // 发件人匹配
+            if (rule.match_sender) {
+                sql += " AND sender LIKE ?";
+                params.push('%' + rule.match_sender + '%');
+            }
+            // 收件人匹配
+            if (rule.match_receiver) {
+                sql += " AND recipient LIKE ?";
+                params.push('%' + rule.match_receiver + '%');
+            }
+            // 正文匹配
+            if (rule.match_body) {
+                sql += " AND body LIKE ?";
+                params.push('%' + rule.match_body + '%');
+            }
+
+            // 排序和数量限制 (默认5条)
+            sql += " ORDER BY id DESC LIMIT ?";
+            params.push(rule.fetch_limit || 5);
+
+            // 2.3 执行查询
+            const { results } = await env.DB.prepare(sql).bind(...params).all();
+
+            // 2.4 格式化输出 (定制格式: 时间 | 正文)
+            if (!results || results.length === 0) {
+                return new Response("暂无符合条件的邮件。", { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
+            }
+
+            // 【重点修改】使用加号拼接，防止符号错误
+            const outputText = results.map(mail => {
+                // 格式：2025-12-14 21:11:35 | 正文内容
+                return formatDateSimple(mail.received_at) + " | " + stripHtml(mail.body);
+            }).join('\n'); // 多封邮件之间用换行分隔
+
+            return new Response(outputText, { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
+        }
+        // 如果查不到规则，继续往下走，最终会被鉴权拦截或返回 Backend Active
+      }
   
-      // 2. 身份验证
+      // 3. 身份验证
       const authHeader = request.headers.get("Authorization");
       if (!checkAuth(authHeader, env)) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders() });
       }
   
-      // 3. API 路由
+      // 4. API 路由
       if (url.pathname.startsWith('/api/accounts')) return handleAccounts(request, env);
       if (url.pathname.startsWith('/api/tasks')) return handleTasks(request, env);
       if (url.pathname.startsWith('/api/emails')) return handleEmails(request, env);
+      // [新增] 规则管理路由
+      if (url.pathname.startsWith('/api/rules')) return handleRules(request, env);
       
       return new Response("Backend Active", { headers: corsHeaders() });
     },
@@ -39,7 +99,7 @@ export default {
     async scheduled(event, env, ctx) {
       ctx.waitUntil(processScheduledTasks(env));
     }
-  };
+};
   
   // --- 辅助函数 ---
   
@@ -71,8 +131,6 @@ export default {
   }
 
   // [修改] 计算下次运行时间 (替代 calculateDelay)
-  // 支持格式: "dRange|hRange|mRange|sRange" (例如 "1-2|0-5|0-0|0-0")
-  // 也兼容旧格式 (为了不报错)
   function calculateNextRun(baseTimeMs, configStr) {
       if (!configStr) {
           // 没填配置，默认 +1 天
@@ -114,6 +172,53 @@ export default {
       if (addMs <= 0) addMs = 60000;
 
       return baseTimeMs + addMs;
+  }
+
+  // [修改] 日期格式化: 强制转为中国时间 YYYY-MM-DD HH:mm:ss
+  function formatDateSimple(ts) {
+      if(!ts) return '';
+      // 使用 zh-CN 和 Asia/Shanghai
+      // 将日期分隔符 / 替换为 -
+      try {
+          return new Date(ts).toLocaleString('zh-CN', { 
+              timeZone: 'Asia/Shanghai',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+          }).replace(/\//g, '-');
+      } catch(e) {
+          // 回退机制，防止环境不支持
+          return new Date(ts).toISOString().replace('T', ' ').substring(0, 19);
+      }
+  }
+
+  // [新增] 生成随机查询码
+  function generateQueryCode(length = 10) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+  }
+
+  // [新增] HTML转纯文本 (用于公开链接显示)
+  function stripHtml(html) {
+      if (!html) return "";
+      // 1. 处理链接： <a href="...">text</a>  ->  text (href)
+      let text = html.replace(/<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
+      // 2. 处理换行： <br>, </p>, </div> -> \n
+      text = text.replace(/<(?:br|\/p|div)\s*\/?>/gi, '\n');
+      // 3. 移除所有其他 HTML 标签
+      text = text.replace(/<[^>]*>/g, '');
+      // 4. 处理 HTML 实体 (简单的几个)
+      text = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      // 5. 移除多余空行
+      return text.split('\n').map(line => line.trim()).filter(line => line).join('\n');
   }
   
   async function getAccountAuth(env, accountId) {
@@ -431,6 +536,76 @@ export default {
           `).bind(accountId, rawInput, Date.now()).run();
       }
       return false;
+  }
+
+  // --- [新增] 收件规则管理 API ---
+  async function handleRules(req, env) {
+      const url = new URL(req.url);
+      const method = req.method;
+
+      if (method === 'GET') {
+          // 导出 CSV
+          if (url.pathname === '/api/rules/export') {
+              const { results } = await env.DB.prepare('SELECT * FROM access_rules ORDER BY id DESC').all();
+              const csvHeader = "ID,Name,Alias,QueryCode,FetchLimit,ValidUntil,MatchSender,MatchReceiver,MatchBody\n";
+              const csvBody = results.map(r => 
+                  `"${r.id}","${r.name}","${r.alias}","${r.query_code}","${r.fetch_limit||''}","${r.valid_until||''}","${r.match_sender||''}","${r.match_receiver||''}","${r.match_body||''}"`
+              ).join('\n');
+              return new Response(csvHeader + csvBody, { headers: { "Content-Type": "text/csv;charset=UTF-8", "Content-Disposition": "attachment; filename=rules.csv" } });
+          }
+          // 获取列表
+          const { results } = await env.DB.prepare('SELECT * FROM access_rules ORDER BY id DESC').all();
+          return new Response(JSON.stringify(results), { headers: corsHeaders() });
+      }
+
+      if (method === 'POST') {
+          // 导入
+          if (url.pathname === '/api/rules/import') {
+              const data = await req.json();
+              if (!Array.isArray(data)) return new Response("Invalid data", { status: 400 });
+              let count = 0;
+              for (const item of data) {
+                  const code = item.query_code || generateQueryCode(); 
+                  await env.DB.prepare(`
+                      INSERT INTO access_rules (name, alias, query_code, fetch_limit, valid_until, match_sender, match_receiver, match_body)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  `).bind(item.name, item.alias, code, item.fetch_limit, item.valid_until, item.match_sender, item.match_receiver, item.match_body).run();
+                  count++;
+              }
+              return new Response(JSON.stringify({ success: true, count }), { headers: corsHeaders() });
+          }
+
+          // 新增/编辑
+          const data = await req.json();
+          if (!data.name || !data.alias) return new Response(JSON.stringify({ error: "Name/Alias required" }), { status: 400, headers: corsHeaders() });
+          
+          let code = data.query_code;
+          if (!code) code = generateQueryCode(); // 如果为空，自动生成
+          
+          // 检查唯一性
+          if (!data.id) {
+               const existing = await env.DB.prepare('SELECT id FROM access_rules WHERE query_code = ?').bind(code).first();
+               if (existing) return new Response(JSON.stringify({ error: "查询码已存在，请更换" }), { status: 400, headers: corsHeaders() });
+          }
+
+          if (data.id) {
+              await env.DB.prepare(`UPDATE access_rules SET name=?, alias=?, query_code=?, fetch_limit=?, valid_until=?, match_sender=?, match_receiver=?, match_body=? WHERE id=?`)
+                  .bind(data.name, data.alias, code, data.fetch_limit, data.valid_until, data.match_sender, data.match_receiver, data.match_body, data.id).run();
+          } else {
+              await env.DB.prepare(`INSERT INTO access_rules (name, alias, query_code, fetch_limit, valid_until, match_sender, match_receiver, match_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+                  .bind(data.name, data.alias, code, data.fetch_limit, data.valid_until, data.match_sender, data.match_receiver, data.match_body).run();
+          }
+          return new Response(JSON.stringify({ success: true }), { headers: corsHeaders() });
+      }
+
+      if (method === 'DELETE') {
+          const ids = await req.json();
+          if (!Array.isArray(ids)) return new Response("Invalid IDs", { status: 400 });
+          const placeholders = ids.map(() => '?').join(',');
+          await env.DB.prepare(`DELETE FROM access_rules WHERE id IN (${placeholders})`).bind(...ids).run();
+          return new Response(JSON.stringify({ success: true }), { headers: corsHeaders() });
+      }
+      return new Response("OK", { headers: corsHeaders() });
   }
   
   async function handleAccounts(req, env) {
