@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>邮件查询</title>
+    <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; background: #f5f5f5; padding: 20px; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .loading { text-align: center; color: #666; margin-top: 50px; }
+        
+        /* 邮件卡片样式 */
+        .email-card { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
+        .email-meta { font-size: 0.9rem; color: #888; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #eee; display: flex; justify-content: space-between; }
+        .email-body { font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+        .error-msg { color: red; text-align: center; margin-top: 50px; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    <div class="loading">正在查询...</div>
+</div>
+
+<script>
+    // ▼▼▼ 请务必修改这里为您的 Worker 域名 ▼▼▼
+    const WORKER_API = "https://gm.xyrj.dpdns.org"; 
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
+    async function fetchEmails() {
+        const app = document.getElementById('app');
+        
+        // 1. 获取 URL 中的查询码 (支持 ?code=xxx 和 路径/xxx 两种尝试)
+        const params = new URLSearchParams(window.location.search);
+        let code = params.get('code');
+
+        // 如果没有 ?code=，尝试从路径获取 (适配 SPA 路由)
+        if (!code) {
+            const path = window.location.pathname.replace('/', '');
+            if (path && path !== 'index.html') code = path;
+        }
+
+        if (!code) {
+            app.innerHTML = '<div class="error-msg">请输入查询码<br>例如: https://域名/?code=ABC1234</div>';
+            return;
+        }
+
+        try {
+            // 2. 请求后端 Worker (加上 format=json)
+            // 注意：这里我们构造的请求是 https://worker.dev/查询码?format=json
+            const resp = await fetch(`${WORKER_API}/${code}?format=json`);
+            
+            if (!resp.ok) {
+                if (resp.status === 403) throw new Error("查询码已失效或过期");
+                throw new Error("查询失败");
+            }
+
+            const data = await resp.json();
+
+            if (data.error) {
+                app.innerHTML = `<div class="error-msg">${data.error}</div>`;
+                return;
+            }
+
+            // 3. 渲染页面
+            if (data.length === 0) {
+                app.innerHTML = '<div class="loading">暂无符合条件的邮件</div>';
+                return;
+            }
+
+            let html = '';
+            data.forEach(mail => {
+                html += `
+                <div class="email-card">
+                    <div class="email-meta">
+                        <span>时间: ${mail.received_at}</span>
+                        <span>发件人: ${escapeHtml(mail.sender)}</span>
+                    </div>
+                    <div class="email-body">${escapeHtml(mail.body)}</div>
+                </div>`;
+            });
+            app.innerHTML = html;
+
+        } catch (err) {
+            app.innerHTML = `<div class="error-msg">${err.message}</div>`;
+        }
+    }
+
+    // 简单的防注入转义
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text.replace(/&/g, "&amp;")
+                   .replace(/</g, "&lt;")
+                   .replace(/>/g, "&gt;")
+                   .replace(/"/g, "&quot;")
+                   .replace(/'/g, "&#039;");
+    }
+
+    // 启动
+    fetchEmails();
+</script>
+
+</body>
+</html>
