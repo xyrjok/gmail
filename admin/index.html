@@ -28,6 +28,7 @@
             </div>
             <div class="list-group list-group-flush">
                 <a href="#" class="list-group-item list-group-item-action active" onclick="showSection('section-accounts')"><i class="fas fa-users-cog me-2"></i> 邮箱管理</a>
+                <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-rules')"><i class="fas fa-link me-2"></i> 收件规则</a>
                 <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-send')"><i class="fas fa-paper-plane me-2"></i> 发件设置</a>
                 <a href="#" class="list-group-item list-group-item-action" onclick="showSection('section-receive')"><i class="fas fa-inbox me-2"></i> 收件设置</a>
                 <a href="#" class="list-group-item list-group-item-action" onclick="doLogout()"><i class="fas fa-sign-out-alt me-2"></i> 退出登录</a>
@@ -77,6 +78,51 @@
                                 <button class="btn btn-sm btn-outline-secondary" id="btn-prev-acc" onclick="changeAccountPage(-1)" disabled>上一页</button>
                                 <button class="btn btn-sm btn-outline-secondary ms-1" id="btn-next-acc" onclick="changeAccountPage(1)" disabled>下一页</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-rules" class="content-section">
+                <h3 class="mb-4">收件规则 (公开链接)</h3>
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="alert alert-info py-2 small">
+                            <i class="fas fa-info-circle me-1"></i> 通过链接 <code>https://域名/查询码</code> 即可直接访问符合条件的邮件内容 (纯文本格式)。
+                        </div>
+                        <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+                            <button class="btn btn-sm btn-primary" onclick="openAddRuleModal()"><i class="fas fa-plus"></i> 添加规则</button>
+                            <button class="btn btn-sm btn-danger" onclick="batchDelRules()"><i class="fas fa-trash"></i> 批量删除</button>
+                            
+                            <div class="input-group input-group-sm ms-2" style="width: 200px;">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" placeholder="搜索名称/查询码..." onkeyup="filterRules(this.value)">
+                            </div>
+
+                            <div class="ms-auto">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="openBatchRuleModal()"><i class="fas fa-file-import"></i> 批量导入</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="exportRules()"><i class="fas fa-file-export"></i> 批量导出</button>
+                            </div>
+                        </div>
+                        
+                        <table class="table table-hover table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th width="40"><input type="checkbox" id="check-all-rule" onchange="toggleAll('rule')"></th>
+                                    <th>邮箱名</th>
+                                    <th>别名</th>
+                                    <th>查询码 (点击复制链接)</th>
+                                    <th>抓取数</th>
+                                    <th>有效期</th>
+                                    <th style="width: 25%">匹配条件 (发/收/文)</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rule-list-body"></tbody>
+                        </table>
+                        
+                        <div class="card-footer bg-white d-flex justify-content-between align-items-center border-top-0 pt-3">
+                            <small class="text-muted" id="rule-page-info">共 0 条</small>
                         </div>
                     </div>
                 </div>
@@ -344,6 +390,91 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-primary" onclick="submitBatchAccountImport()">开始导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="addRuleModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="ruleModalTitle">添加收件规则</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="rule-id">
+                    
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">邮箱名 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="rule-name" placeholder="例如: office@gmail.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">别名 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="rule-alias" placeholder="例如: 财务部">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">查询码 (访问凭证) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="rule-code" placeholder="留空自动生成 (10位随机码)">
+                            <button class="btn btn-outline-secondary" type="button" onclick="generateRandomRuleCode()">随机生成</button>
+                        </div>
+                        <div class="form-text">访问链接格式: https://你的域名/查询码</div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">单次抓取数量</label>
+                            <input type="number" class="form-control" id="rule-limit" placeholder="默认: 5">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-muted">有效期 (留空代表永久)</label>
+                            <input type="datetime-local" class="form-control" id="rule-valid">
+                        </div>
+                    </div>
+
+                    <div class="p-3 bg-light rounded border">
+                        <h6 class="small fw-bold mb-3 text-secondary">邮件过滤条件 (留空代表不限制)</h6>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted">发件人匹配 (Sender)</label>
+                            <input type="text" class="form-control form-control-sm" id="rule-match-sender" placeholder="包含此关键词...">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted">收件人匹配 (Recipient)</label>
+                            <input type="text" class="form-control form-control-sm" id="rule-match-receiver" placeholder="包含此关键词...">
+                        </div>
+                        <div>
+                            <label class="form-label small text-muted">正文匹配 (Body)</label>
+                            <input type="text" class="form-control form-control-sm" id="rule-match-body" placeholder="包含此关键词...">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="saveRule()">保存规则</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="batchRuleImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量导入规则</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">选择 JSON 文件</label>
+                        <input class="form-control" type="file" id="import-rule-file-input" accept=".json">
+                    </div>
+                    <div class="form-text">文件内容应为规则对象的 JSON 数组。</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="submitBatchRuleImport()">开始导入</button>
                 </div>
             </div>
         </div>
