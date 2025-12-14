@@ -5,15 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>邮件查询</title>
     <style>
-        body { font-family: 'Microsoft YaHei', sans-serif; background: #f5f5f5; padding: 20px; color: #333; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .loading { text-align: center; color: #666; margin-top: 50px; }
-        
-        /* 邮件卡片样式 */
-        .email-card { background: #fff; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid #007bff; }
-        .email-meta { font-size: 0.9rem; color: #888; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #eee; display: flex; justify-content: space-between; }
-        .email-body { font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
-        .error-msg { color: red; text-align: center; margin-top: 50px; }
+        /* 极简样式：只有字体大小 */
+        body { 
+            font-size: 16px; 
+            font-family: sans-serif; 
+            line-height: 1.5; 
+            padding: 15px; 
+            color: #000;
+            background: #fff;
+        }
+        /* 简单的行样式 */
+        .row { 
+            margin-bottom: 20px; 
+            border-bottom: 1px dashed #ccc; 
+            padding-bottom: 10px; 
+        }
+        /* 错误提示样式 */
+        .error-msg { 
+            font-size: 16px;
+            color: #000;
+        }
+        a { color: #007bff; text-decoration: none; }
+        .loading { color: #666; }
     </style>
 </head>
 <body>
@@ -34,7 +47,8 @@
         }
 
         if (!code) {
-            app.innerHTML = '<div class="error-msg">请输入查询码<br>例如: https://域名/?code=ABC1234</div>';
+            // 没有查询码 = 查询码错误
+            app.innerHTML = '<div class="error-msg">查询码错误！</div>';
             return;
         }
 
@@ -42,10 +56,14 @@
             const resp = await fetch(`${WORKER_API}/${code}?format=json`);
             
             if (!resp.ok) {
-                if (resp.status === 403) throw new Error("查询码已失效或过期");
-                throw new Error("查询失败");
+                // 如果是 403 (过期)，显示过期提示；否则 (404等) 显示错误
+                if (resp.status === 403) {
+                    app.innerHTML = '<div class="error-msg">查询码已过期！</div>';
+                } else {
+                    app.innerHTML = '<div class="error-msg">查询码错误！</div>';
+                }
+                return; // 终止执行
             }
-
             const data = await resp.json();
 
             if (data.error) {
@@ -61,20 +79,20 @@
 
             let html = '';
             data.forEach(mail => {
+                // 格式：时间 | 正文
                 html += `
-                <div class="email-card">
-                    <div class="email-meta">
-                        <span>时间: ${mail.received_at}</span>
-                        <span>发件人: ${escapeHtml(mail.sender)}</span>
-                    </div>
-                    <div class="email-body">${escapeHtml(mail.body)}</div>
+                <div class="row">
+                    ${mail.received_at} | ${escapeHtml(mail.body)}
                 </div>`;
             });
             app.innerHTML = html;
 
         } catch (err) {
-            app.innerHTML = `<div class="error-msg">${err.message}</div>`;
-        }
+        // 防止覆盖上面的特定提示，这里可以留空或者只提示错误
+        if (app.innerHTML.indexOf('查询码') === -1) {
+                 app.innerHTML = '<div class="error-msg">查询码错误！</div>';
+            }
+        }    
     }
 
     // 简单的防注入转义
