@@ -23,18 +23,11 @@
 </div>
 
 <script>
-    // ▼▼▼ 请务必修改这里为您的 Worker 域名 ▼▼▼
     const WORKER_API = "https://gm.xyrj.dpdns.org"; 
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
     async function fetchEmails() {
         const app = document.getElementById('app');
-        
-        // 1. 获取 URL 中的查询码 (支持 ?code=xxx 和 路径/xxx 两种尝试)
         const params = new URLSearchParams(window.location.search);
         let code = params.get('code');
-
-        // 如果没有 ?code=，尝试从路径获取 (适配 SPA 路由)
         if (!code) {
             const path = window.location.pathname.replace('/', '');
             if (path && path !== 'index.html') code = path;
@@ -46,8 +39,6 @@
         }
 
         try {
-            // 2. 请求后端 Worker (加上 format=json)
-            // 注意：这里我们构造的请求是 https://worker.dev/查询码?format=json
             const resp = await fetch(`${WORKER_API}/${code}?format=json`);
             
             if (!resp.ok) {
