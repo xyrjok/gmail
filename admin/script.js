@@ -497,13 +497,12 @@ function openEditRuleModal(id) {
     $("#rule-alias").val(rule.alias);
     $("#rule-code").val(rule.query_code);
     $("#rule-limit").val(rule.fetch_limit || 5);
-    
-    if (rule.valid_until) {
-        $("#rule-valid").val(toLocalISOString(new Date(rule.valid_until)));
+    if (rule.valid_until && rule.valid_until > Date.now()) {
+        const daysLeft = Math.ceil((rule.valid_until - Date.now()) / (24 * 60 * 60 * 1000));
+        $("#rule-valid").val(daysLeft > 0 ? daysLeft : "");
     } else {
         $("#rule-valid").val("");
     }
-
     $("#rule-match-sender").val(rule.match_sender || "");
     $("#rule-match-receiver").val(rule.match_receiver || "");
     $("#rule-match-body").val(rule.match_body || "");
@@ -519,14 +518,12 @@ function saveRule() {
     if (!name || !alias) {
         return showToast("邮箱名和别名不能为空");
     }
-
-    // 有效期处理
     let validUntil = null;
-    const dateStr = $("#rule-valid").val();
-    if (dateStr) {
-        validUntil = new Date(dateStr).getTime();
+    const daysVal = $("#rule-valid").val();
+    if (daysVal && parseFloat(daysVal) > 0) {
+        // 当前时间 + 天数 * 24小时毫秒数
+        validUntil = Date.now() + parseFloat(daysVal) * 24 * 60 * 60 * 1000;
     }
-
     const data = {
         name: name,
         alias: alias,
