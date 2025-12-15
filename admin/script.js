@@ -257,10 +257,26 @@ function exportAccounts() {
         fetch(`${API_BASE}/api/accounts?type=export`, { headers: getHeaders() })
             .then(r => r.json())
             .then(data => {
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-                const downloadAnchorNode = document.createElement('a');
-                downloadAnchorNode.setAttribute("href", dataStr);
-                downloadAnchorNode.setAttribute("download", "accounts_backup_full.json");
+                // --- [修改] 导出为制表符分隔的 TXT ---
+            const lines = data.map(acc => {
+                // 1. 还原 API Config (ID,Secret,Token)
+                let apiConf = '';
+                if (acc.client_id) apiConf = `${acc.client_id},${acc.client_secret || ''},${acc.refresh_token || ''}`;
+                
+                // 2. 获取 GAS URL (如果类型不是纯 API，backend 会在 script_url 存储 GAS 地址)
+                let gasUrl = '';
+                if (acc.script_url && acc.script_url.startsWith('http')) gasUrl = acc.script_url;
+
+                // 3. 拼接: 名称 \t 别名 \t API配置 \t GAS URL
+                return `${acc.name}\t${acc.alias || ''}\t${apiConf}\t${gasUrl}`;
+            });
+
+            const txtContent = lines.join('\n');
+            const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "accounts_backup.txt");
+            // --- [修改结束] ---
                 document.body.appendChild(downloadAnchorNode);
                 downloadAnchorNode.click();
                 downloadAnchorNode.remove();
@@ -1143,9 +1159,26 @@ function submitBatchAccountImport() {
 
 function processImport(jsonStr) {
     try {
-        const json = JSON.parse(jsonStr);
-        if (!Array.isArray(json)) throw new Error("JSON 必须是数组格式");
+        // --- [修改] 解析制表符分隔的文本 ---
+        const lines = jsonStr.split('\n').filter(line => line.trim());
+        const json = lines.map(line => {
+            // 分割: 名称 \t 别名 \t API配置 \t GAS URL
+            const parts = line.split('\t').map(s => s.trim());
+            const name = parts[0];
+            const alias = parts[1] || '';
+            const api_config = parts[2] || ''; // ID,Secret,Token
+            const gas_url = parts[3] || '';
 
+            // 自动判断类型
+            let type = 'API';
+            if (api_config && gas_url) type = 'API/GAS';
+            else if (gas_url) type = 'GAS';
+            
+            return { name, alias, api_config, gas_url, type };
+        });
+
+        if (json.length === 0) throw new Error("内容为空或格式错误");
+        // --- [修改结束] ---
         fetch(API_BASE + '/api/accounts', {
             method: 'POST',
             headers: getHeaders(),
