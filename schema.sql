@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS access_rules (
     name            TEXT NOT NULL,
     alias           TEXT NOT NULL,
     query_code      TEXT NOT NULL UNIQUE,
-    fetch_limit     INTEGER DEFAULT 5,
+    fetch_limit     TEXT DEFAULT '5',
     valid_until     INTEGER,
     match_sender    TEXT,
     match_receiver  TEXT,
