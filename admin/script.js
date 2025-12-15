@@ -528,7 +528,8 @@ function saveRule() {
         name: name,
         alias: alias,
         query_code: $("#rule-code").val().trim(), // 后端会处理为空自动生成
-        fetch_limit: parseInt($("#rule-limit").val()) || 5,
+        // [修改] 去掉 parseInt，直接获取字符串，否则 "3-1" 会被转成 3
+        fetch_limit: $("#rule-limit").val().trim() || "5",
         valid_until: validUntil,
         match_sender: $("#rule-match-sender").val().trim(),
         match_receiver: $("#rule-match-receiver").val().trim(),
