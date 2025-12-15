@@ -438,9 +438,9 @@ function renderRules(data) {
             <td class="fw-bold">${escapeHtml(r.name)}</td>
             <td>${escapeHtml(r.alias)}</td>
             <td>
-                <div class="input-group input-group-sm" style="width: 140px;" onclick="copyLink('${fullLink}')" title="点击复制链接">
+                <div class="input-group input-group-sm" style="width: 140px;" onclick="window.open('${fullLink}', '_blank')" title="点击访问链接">
                     <span class="input-group-text bg-light"><i class="fas fa-link"></i></span>
-                    <input type="text" class="form-control cursor-pointer bg-white" style="padding: .25rem .12rem;" value="${r.query_code}" readonly>
+                    <input type="text" class="form-control cursor-pointer bg-white" value="${r.query_code}" readonly>
                 </div>
             </td>
             <td>${r.fetch_limit || 5}</td>
