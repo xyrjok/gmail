@@ -63,9 +63,25 @@ export default {
             // 2.3 执行查询
             const { results } = await env.DB.prepare(sql).bind(...params).all();
 
-            // 2.4 格式化输出 (定制格式: 时间 | 正文)
+            // 2.4 格式化输出
             if (!results || results.length === 0) {
+                // [新增] 如果是 API 请求 JSON，返回 JSON 错误
+                if (url.searchParams.get('format') === 'json') {
+                    return new Response(JSON.stringify({ error: "暂无邮件" }), { headers: corsHeaders() });
+                }
                 return new Response("暂无符合条件的邮件。", { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
+            }
+
+            // === [新增] 如果请求参数里有 format=json，返回 JSON 数据给前端 ===
+            if (url.searchParams.get('format') === 'json') {
+                const jsonResponse = results.map(mail => ({
+                    subject: mail.subject,
+                    sender: mail.sender,
+                    received_at: formatDateSimple(mail.received_at),
+                    // 保留正文，并做简单处理
+                    body: stripHtml(mail.body)
+                }));
+                return new Response(JSON.stringify(jsonResponse), { headers: corsHeaders() });
             }
 
             // 【重点修改】使用加号拼接，防止符号错误
@@ -992,7 +1008,7 @@ export default {
           }
   
           if (task.is_loop) {
-              // [核心] 循环逻辑: 调用 calculateNextRun 计算自定义随机间隔
+              // [核心] 循 环逻辑: 调用 calculateNextRun 计算自定义随机间隔
               let nextRun = calculateNextRun(Date.now(), task.delay_config);
               await env.DB.prepare("UPDATE send_tasks SET next_run_at = ?, success_count = IFNULL(success_count, 0) + 1 WHERE id = ?").bind(nextRun, task.id).run();
           } else {
