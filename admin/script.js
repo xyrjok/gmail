@@ -616,45 +616,97 @@ function batchDelRules() {
 }
 
 function exportRules() {
-    window.open(`${API_BASE}/api/rules/export`);
+    fetch(`${API_BASE}/api/rules`, { headers: getHeaders() })
+        .then(r => r.json())
+        .then(data => {
+            // 导出为制表符分隔的 TXT
+            const lines = data.map(r => {
+                let days = '';
+                if (r.valid_until && r.valid_until > Date.now()) {
+                    days = Math.ceil((r.valid_until - Date.now()) / (24 * 60 * 60 * 1000));
+                }
+                return `${r.name}\t${r.alias}\t${r.query_code}\t${r.fetch_limit||5}\t${days}\t${r.match_sender||''}\t${r.match_receiver||''}\t${r.match_body||''}`;
+            });
+
+            const txtContent = lines.join('\n');
+            const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "rules_backup.txt");
+            
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        })
+        .catch(() => showToast("导出失败"));
 }
 
 function openBatchRuleModal() {
+    $("#import-rule-text").val("");
     $("#import-rule-file-input").val("");
     new bootstrap.Modal(document.getElementById('batchRuleImportModal')).show();
 }
 
 function submitBatchRuleImport() {
-    const fileInput = document.getElementById('import-rule-file-input');
-    const file = fileInput.files[0];
-    if (!file) return showToast("请选择 JSON 文件");
+    const activeTab = $("#ruleImportTabs .active").attr("data-bs-target");
+    
+    if (activeTab === "#tab-rule-paste") {
+        const text = $("#import-rule-text").val();
+        if (!text.trim()) return showToast("请输入内容");
+        processRuleImport(text);
+    } else {
+        const fileInput = document.getElementById('import-rule-file-input');
+        const file = fileInput.files[0];
+        if (!file) return showToast("请选择文件");
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const json = JSON.parse(e.target.result);
-            if (!Array.isArray(json)) throw new Error("JSON 必须是数组");
-            
-            fetch(API_BASE + '/api/rules/import', {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(json)
-            }).then(r => r.json()).then(res => {
-                if (res.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('batchRuleImportModal')).hide();
-                    alert(`导入完成! 成功导入 ${res.count} 条规则`);
-                    loadRules();
-                } else {
-                    alert("导入失败: " + res.error);
-                }
-            });
-        } catch(err) {
-            alert("文件解析错误: " + err.message);
-        }
-    };
-    reader.readAsText(file);
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            processRuleImport(e.target.result);
+        };
+        reader.readAsText(file);
+    }
 }
 
+function processRuleImport(content) {
+    try {
+        const lines = content.split('\n').filter(line => line.trim());
+        const json = lines.map(line => {
+            const p = line.split('\t').map(s => s.trim());
+            let validUntil = null;
+            if (p[4] && parseInt(p[4]) > 0) {
+                validUntil = Date.now() + parseInt(p[4]) * 86400000;
+            }
+            return {
+                name: p[0],
+                alias: p[1] || '',
+                query_code: p[2] || '',
+                fetch_limit: p[3] || '5',
+                valid_until: validUntil,
+                match_sender: p[5] || '',
+                match_receiver: p[6] || '',
+                match_body: p[7] || ''
+            };
+        });
+
+        if (json.length === 0) throw new Error("内容为空");
+
+        fetch(API_BASE + '/api/rules/import', {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(json)
+        }).then(r => r.json()).then(res => {
+            if (res.success) {
+                bootstrap.Modal.getInstance(document.getElementById('batchRuleImportModal')).hide();
+                alert(`导入完成! 成功导入 ${res.count} 条规则`);
+                loadRules();
+            } else {
+                alert("导入失败: " + (res.error || "未知错误"));
+            }
+        });
+    } catch(err) {
+        alert("解析错误: " + err.message);
+    }
+}
 
 // ================== 3. 发件任务管理 (Tasks) ==================
 
