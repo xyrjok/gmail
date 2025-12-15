@@ -258,30 +258,32 @@ function exportAccounts() {
             .then(r => r.json())
             .then(data => {
                 // --- [修改] 导出为制表符分隔的 TXT ---
-            const lines = data.map(acc => {
-                // 1. 还原 API Config (ID,Secret,Token)
-                let apiConf = '';
-                if (acc.client_id) apiConf = `${acc.client_id},${acc.client_secret || ''},${acc.refresh_token || ''}`;
+                const lines = data.map(acc => {
+                    // 1. 还原 API Config (ID,Secret,Token)
+                    let apiConf = '';
+                    if (acc.client_id) apiConf = `${acc.client_id},${acc.client_secret || ''},${acc.refresh_token || ''}`;
+                    
+                    // 2. 获取 GAS URL
+                    let gasUrl = '';
+                    if (acc.script_url && acc.script_url.startsWith('http')) gasUrl = acc.script_url;
+
+                    // 3. 拼接: 名称 \t 别名 \t API配置 \t GAS URL
+                    return `${acc.name}\t${acc.alias || ''}\t${apiConf}\t${gasUrl}`;
+                });
+
+                const txtContent = lines.join('\n');
+                const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", "accounts_backup.txt"); // 文件名改为 .txt
                 
-                // 2. 获取 GAS URL (如果类型不是纯 API，backend 会在 script_url 存储 GAS 地址)
-                let gasUrl = '';
-                if (acc.script_url && acc.script_url.startsWith('http')) gasUrl = acc.script_url;
-
-                // 3. 拼接: 名称 \t 别名 \t API配置 \t GAS URL
-                return `${acc.name}\t${acc.alias || ''}\t${apiConf}\t${gasUrl}`;
-            });
-
-            const txtContent = lines.join('\n');
-            const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", "accounts_backup.txt");
-            // --- [修改结束] ---
                 document.body.appendChild(downloadAnchorNode);
                 downloadAnchorNode.click();
                 downloadAnchorNode.remove();
                 btn.html(orgHtml);
-            }).catch(() => {
+                // --- [修改结束] ---
+            })
+            .catch(() => {
                 showToast("导出失败");
                 btn.html(orgHtml);
             });
@@ -1160,10 +1162,13 @@ function submitBatchAccountImport() {
 function processImport(jsonStr) {
     try {
         // --- [修改] 解析制表符分隔的文本 ---
+        // 按行分割，过滤空行
         const lines = jsonStr.split('\n').filter(line => line.trim());
+        
         const json = lines.map(line => {
-            // 分割: 名称 \t 别名 \t API配置 \t GAS URL
+            // 按制表符分割: 名称 \t 别名 \t API配置 \t GAS URL
             const parts = line.split('\t').map(s => s.trim());
+            
             const name = parts[0];
             const alias = parts[1] || '';
             const api_config = parts[2] || ''; // ID,Secret,Token
@@ -1174,11 +1179,14 @@ function processImport(jsonStr) {
             if (api_config && gas_url) type = 'API/GAS';
             else if (gas_url) type = 'GAS';
             
+            // 返回后端需要的对象格式
             return { name, alias, api_config, gas_url, type };
         });
 
         if (json.length === 0) throw new Error("内容为空或格式错误");
         // --- [修改结束] ---
+
+        // 发送给后端 (保持不变)
         fetch(API_BASE + '/api/accounts', {
             method: 'POST',
             headers: getHeaders(),
@@ -1194,7 +1202,7 @@ function processImport(jsonStr) {
             }
         });
     } catch(err) {
-        alert("JSON 格式错误: " + err.message);
+        alert("解析错误: " + err.message);
     }
 }
 
