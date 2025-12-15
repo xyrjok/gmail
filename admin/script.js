@@ -1074,7 +1074,8 @@ function syncAndLoad() {
 }
 
 function fetchEmailsAfterSync() {
-    fetch(`${API_BASE}/api/emails?account_id=${currentInboxAccountId}&limit=${currentEmailLimit}`, { 
+    // [修改] 增加 &mode= 参数，将当前选择的模式(API/GAS)传给后端
+    fetch(`${API_BASE}/api/emails?account_id=${currentInboxAccountId}&limit=${currentEmailLimit}&mode=${currentFetchMode}`, {
         headers: getHeaders() 
     })
     .then(r => r.json())
