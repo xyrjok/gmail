@@ -467,11 +467,26 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">选择 JSON 文件</label>
-                        <input class="form-control" type="file" id="import-rule-file-input" accept=".json">
+                    <ul class="nav nav-tabs mb-3" id="ruleImportTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-rule-paste" type="button">粘贴文本</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-rule-file" type="button">上传文件</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-rule-paste">
+                            <p class="small text-muted">格式：<code>名称 [TAB] 别名 [TAB] 查询码 [TAB] 抓取数 [TAB] 有效天数 [TAB] 发件人 [TAB] 收件人 [TAB] 正文</code><br>每行一条规则：</p>
+                            <textarea id="import-rule-text" class="form-control" rows="10" placeholder="例如:&#10;Office&#09;办公&#09;CODE123&#09;5&#09;30&#09;boss@gm.com&#09;&#09;重要"></textarea>
+                        </div>
+                        <div class="tab-pane fade" id="tab-rule-file">
+                            <div class="mb-3">
+                                <label for="import-rule-file-input" class="form-label">选择 TXT 文本文件</label>
+                                <input class="form-control" type="file" id="import-rule-file-input" accept=".txt">
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-text">文件内容应为规则对象的 JSON 数组。</div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-primary" onclick="submitBatchRuleImport()">开始导入</button>
