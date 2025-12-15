@@ -428,13 +428,13 @@
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label small text-muted">单次抓取数量</label>
-                            <input type="number" class="form-control" id="rule-limit" placeholder="默认: 5">
+                            <input type="text" class="form-control" id="rule-limit" placeholder="默认: 5 或 5-3">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small text-muted">有效期 (留空代表永久)</label>
-                            <input type="datetime-local" class="form-control" id="rule-valid">
+                            <label class="form-label small text-muted">有效期 (天数, 留空永久)</label>
+                            <input type="number" class="form-control" id="rule-valid" placeholder="例如: 63">
                         </div>
-                    </div>
+                        </div>
 
                     <div class="p-3 bg-light rounded border">
                         <h6 class="small fw-bold mb-3 text-secondary">邮件过滤条件 (留空代表不限制)</h6>
