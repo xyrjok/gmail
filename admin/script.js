@@ -440,7 +440,7 @@ function renderRules(data) {
             <td>
                 <div class="input-group input-group-sm" style="width: 140px;" onclick="copyLink('${fullLink}')" title="点击复制链接">
                     <span class="input-group-text bg-light"><i class="fas fa-link"></i></span>
-                    <input type="text" class="form-control cursor-pointer bg-white" value="${r.query_code}" readonly>
+                    <input type="text" class="form-control cursor-pointer bg-white" style="padding: .25rem .39rem;" value="${r.query_code}" readonly>
                 </div>
             </td>
             <td>${r.fetch_limit || 5}</td>
