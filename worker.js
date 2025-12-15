@@ -54,58 +54,132 @@ export default {
             let qParts = [];
             if (rule.match_sender) qParts.push(`from:${rule.match_sender}`);
             if (rule.match_receiver) qParts.push(`to:${rule.match_receiver}`);
-            if (rule.match_body) qParts.push(rule.match_body);
+            // --- [修改] 自动给每个关键词加上双引号，解决空格、冒号、特殊符号匹配失败的问题 ---
+            if (rule.match_body) {
+                // 例如输入: dasdasd”访|Reuyfdfer of cugft gfte: H
+                // 会被转换为: "dasdasd”访" OR "Reuyfdfer of cugft gfte: H"
+                const bodyQ = rule.match_body.split('|').map(k => `"${k.trim()}"`).join(' OR ');
+                qParts.push(`(${bodyQ})`);
+            }
+            // --- [修改结束] ---
             const qStr = qParts.join(' ') || "label:inbox OR label:spam";
             
-            const limit = rule.fetch_limit || 5;
+            // --- [修改开始] 解析抓取数量 (支持 5-3 格式: 抓5显3) ---
+            let limitFetch = 5;
+            let limitShow = 5;
+            const limitStr = String(rule.fetch_limit || '5');
+            if (limitStr.includes('-')) {
+                const parts = limitStr.split('-');
+                limitFetch = parseInt(parts[0]) || 5;
+                limitShow = parseInt(parts[1]) || limitFetch;
+            } else {
+                limitFetch = parseInt(limitStr) || 5;
+                limitShow = limitFetch;
+            }
+            const limit = limitFetch; 
+            // --- [修改结束] ---
+
             let results = [];
 
-            try {
-                // 3. 仅从该特定账号获取数据 (调用 syncEmails 复用逻辑)
-                // 注意：这里复用 syncEmails 可能会有点小问题(它返回的格式字段不同)，为了稳妥，我们直接调用 Gmail API
-                const authData = await getAccountAuth(env, account.id);
-                if (authData) {
-                    const accessToken = await getAccessToken(authData);
+            // 3. 获取数据 (API 优先 -> GAS 降级)
+            let apiSuccess = false;
 
-                    const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&q=${encodeURIComponent(qStr)}`, {
-                        headers: { 'Authorization': `Bearer ${accessToken}` }
-                    });
-                    
-                    if (listResp.ok) {
-                        const listData = await listResp.json();
-                        if (listData.messages) {
-                            const detailTasks = listData.messages.map(async (msgItem) => {
-                                const detailResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgItem.id}`, {
-                                    headers: { 'Authorization': `Bearer ${accessToken}` }
+            // [Step 1] 尝试 API (如果账号支持)
+            if (account.type.includes('API')) {
+                try {
+                    const authData = await getAccountAuth(env, account.id);
+                    if (authData) {
+                        const accessToken = await getAccessToken(authData);
+                        const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&q=${encodeURIComponent(qStr)}`, {
+                            headers: { 'Authorization': `Bearer ${accessToken}` }
+                        });
+                        
+                        if (listResp.ok) {
+                            const listData = await listResp.json();
+                            if (listData.messages) {
+                                const detailTasks = listData.messages.map(async (msgItem) => {
+                                    const detailResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgItem.id}`, {
+                                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                                    });
+                                    if (detailResp.ok) {
+                                        const detail = await detailResp.json();
+                                        let subject = '(No Subject)';
+                                        let sender = 'Unknown';
+                                        const headers = detail.payload.headers || [];
+                                        headers.forEach(h => {
+                                            if (h.name === 'Subject') subject = h.value;
+                                            if (h.name === 'From') sender = h.value;
+                                        });
+                                        results.push({
+                                            subject: subject,
+                                            sender: sender,
+                                            received_at: parseInt(detail.internalDate || Date.now()),
+                                            body: detail.snippet || ''
+                                        });
+                                    }
                                 });
-                                if (detailResp.ok) {
-                                    const detail = await detailResp.json();
-                                    let subject = '(No Subject)';
-                                    let sender = 'Unknown';
-                                    const headers = detail.payload.headers || [];
-                                    headers.forEach(h => {
-                                        if (h.name === 'Subject') subject = h.value;
-                                        if (h.name === 'From') sender = h.value;
-                                    });
-                                    
-                                    results.push({
-                                        subject: subject,
-                                        sender: sender,
-                                        received_at: parseInt(detail.internalDate || Date.now()),
-                                        body: detail.snippet || ''
-                                    });
-                                }
-                            });
-                            await Promise.all(detailTasks);
+                                await Promise.all(detailTasks);
+                            }
+                            apiSuccess = true; 
                         }
                     }
+                } catch (e) {
+                    console.error("API Fetch Failed:", e);
+                    // API 失败，apiSuccess 保持 false，继续尝试 GAS
                 }
-            } catch (e) {
-                return new Response("Error fetching emails: " + e.message, { status: 500 });
+            }
+
+            // [Step 2] 如果 API 失败或不可用，尝试 GAS (如果账号支持)
+            if (!apiSuccess && account.type.includes('GAS') && account.script_url) {
+                try {
+                    let scriptUrl = account.script_url.trim();
+                    const joinChar = scriptUrl.includes('?') ? '&' : '?';
+                    // GAS 不支持搜索语法，多抓取一些(limit*3)然后在本地过滤
+                    const gasUrl = `${scriptUrl}${joinChar}action=get&limit=${limit * 3}`;
+                    
+                    const resp = await fetch(gasUrl);
+                    if (resp.ok) {
+                        const json = await resp.json();
+                        let items = [];
+                        if (Array.isArray(json)) items = json;
+                        else if (json.data && Array.isArray(json.data)) items = json.data;
+
+                        for (const item of items) {
+                            const subject = item.subject || '(No Subject)';
+                            const sender = item.from || item.sender || 'Unknown';
+                            const body = item.snippet || item.body || '';
+                            const received_at = item.date ? new Date(item.date).getTime() : Date.now();
+
+                            // 本地过滤 (模拟 API 的 query 匹配规则)
+                            let match = true;
+                            if (rule.match_sender && !sender.toLowerCase().includes(rule.match_sender.toLowerCase())) match = false;
+                            
+                            // --- [修改] 正文匹配支持多关键字 (本地过滤 OR 逻辑) ---
+                            if (rule.match_body) {
+                                const keys = rule.match_body.split('|').map(k => k.trim().toLowerCase());
+                                // 只要有一个关键字存在于 body 中，即视为匹配 (OR)
+                                if (!keys.some(k => body.toLowerCase().includes(k))) match = false;
+                            }
+                            // --- [修改结束] ---
+                            
+                            if (match) {
+                                results.push({ subject, sender, received_at, body });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("GAS Fetch Failed:", e);
+                }
             }
 
             // 4. 排序
             results.sort((a, b) => b.received_at - a.received_at);
+
+            // --- [修改开始] 截取需要显示的数量 ---
+            if (results.length > limitShow) {
+                results = results.slice(0, limitShow);
+            }
+            // --- [修改结束] ---
 
             // === 输出逻辑 ===
             if (results.length === 0) {
@@ -231,25 +305,27 @@ export default {
 
   // [修改] 日期格式化: 强制转为中国时间 YYYY-MM-DD HH:mm:ss
   function formatDateSimple(ts) {
-      if(!ts) return '';
-      // 使用 zh-CN 和 Asia/Shanghai
-      // 将日期分隔符 / 替换为 -
-      try {
-          return new Date(ts).toLocaleString('zh-CN', { 
-              timeZone: 'Asia/Shanghai',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: false
-          }).replace(/\//g, '-');
-      } catch(e) {
-          // 回退机制，防止环境不支持
-          return new Date(ts).toISOString().replace('T', ' ').substring(0, 19);
-      }
-  }
+    if(!ts) return '';
+    
+    // --- [修改开始] 手动计算 UTC+8，确保所有环境一致 ---
+    try {
+        const date = new Date(Number(ts));
+        // 加上 8 小时毫秒数
+        const utc8Date = new Date(date.getTime() + 8 * 3600000);
+        
+        const y = utc8Date.getUTCFullYear();
+        const m = String(utc8Date.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(utc8Date.getUTCDate()).padStart(2, '0');
+        const h = String(utc8Date.getUTCHours()).padStart(2, '0');
+        const min = String(utc8Date.getUTCMinutes()).padStart(2, '0');
+        const s = String(utc8Date.getUTCSeconds()).padStart(2, '0');
+        
+        return `${y}-${m}-${d} ${h}:${min}:${s}`;
+    } catch(e) {
+        return new Date(ts).toISOString().replace('T', ' ').substring(0, 19);
+    }
+    // --- [修改结束] ---
+}
 
   // [新增] 生成随机查询码
   function generateQueryCode(length = 10) {
