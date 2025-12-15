@@ -37,58 +37,97 @@ export default {
             }
 
             // 2.2 构建查询条件
-            let sql = "SELECT * FROM received_emails WHERE 1=1";
-            const params = [];
+            // === [修改] 精准定位账号 + 实时获取模式 ===
 
-            // 发件人匹配
-            if (rule.match_sender) {
-                sql += " AND sender LIKE ?";
-                params.push('%' + rule.match_sender + '%');
-            }
-            // 收件人匹配
-            if (rule.match_receiver) {
-                sql += " AND recipient LIKE ?";
-                params.push('%' + rule.match_receiver + '%');
-            }
-            // 正文匹配
-            if (rule.match_body) {
-                sql += " AND body LIKE ?";
-                params.push('%' + rule.match_body + '%');
+            // 1. 根据规则的 name 或 alias 查找对应的唯一邮箱账号
+            const account = await env.DB.prepare(`
+                SELECT * FROM accounts 
+                WHERE (name = ? OR alias = ? OR name = ? OR alias = ?) 
+                AND status = 1
+            `).bind(rule.name, rule.name, rule.alias, rule.alias).first();
+
+            if (!account) {
+                return new Response("未找到对应的有效邮箱账号 (Account Not Found or Disabled)", { status: 404, headers: { "Content-Type": "text/plain;charset=UTF-8" } });
             }
 
-            // 排序和数量限制 (默认5条)
-            sql += " ORDER BY id DESC LIMIT ?";
-            params.push(rule.fetch_limit || 5);
+            // 2. 构建 Gmail 搜索语句
+            let qParts = [];
+            if (rule.match_sender) qParts.push(`from:${rule.match_sender}`);
+            if (rule.match_receiver) qParts.push(`to:${rule.match_receiver}`);
+            if (rule.match_body) qParts.push(rule.match_body);
+            const qStr = qParts.join(' ') || "label:inbox OR label:spam";
+            
+            const limit = rule.fetch_limit || 5;
+            let results = [];
 
-            // 2.3 执行查询
-            const { results } = await env.DB.prepare(sql).bind(...params).all();
+            try {
+                // 3. 仅从该特定账号获取数据 (调用 syncEmails 复用逻辑)
+                // 注意：这里复用 syncEmails 可能会有点小问题(它返回的格式字段不同)，为了稳妥，我们直接调用 Gmail API
+                const authData = await getAccountAuth(env, account.id);
+                if (authData) {
+                    const accessToken = await getAccessToken(authData);
 
-            // 2.4 格式化输出
-            if (!results || results.length === 0) {
-                // [新增] 如果是 API 请求 JSON，返回 JSON 错误
+                    const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&q=${encodeURIComponent(qStr)}`, {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    });
+                    
+                    if (listResp.ok) {
+                        const listData = await listResp.json();
+                        if (listData.messages) {
+                            const detailTasks = listData.messages.map(async (msgItem) => {
+                                const detailResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgItem.id}`, {
+                                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                                });
+                                if (detailResp.ok) {
+                                    const detail = await detailResp.json();
+                                    let subject = '(No Subject)';
+                                    let sender = 'Unknown';
+                                    const headers = detail.payload.headers || [];
+                                    headers.forEach(h => {
+                                        if (h.name === 'Subject') subject = h.value;
+                                        if (h.name === 'From') sender = h.value;
+                                    });
+                                    
+                                    results.push({
+                                        subject: subject,
+                                        sender: sender,
+                                        received_at: parseInt(detail.internalDate || Date.now()),
+                                        body: detail.snippet || ''
+                                    });
+                                }
+                            });
+                            await Promise.all(detailTasks);
+                        }
+                    }
+                }
+            } catch (e) {
+                return new Response("Error fetching emails: " + e.message, { status: 500 });
+            }
+
+            // 4. 排序
+            results.sort((a, b) => b.received_at - a.received_at);
+
+            // === 输出逻辑 ===
+            if (results.length === 0) {
                 if (url.searchParams.get('format') === 'json') {
                     return new Response(JSON.stringify({ error: "暂无邮件" }), { headers: corsHeaders() });
                 }
                 return new Response("暂无符合条件的邮件。", { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
             }
 
-            // === [新增] 如果请求参数里有 format=json，返回 JSON 数据给前端 ===
             if (url.searchParams.get('format') === 'json') {
                 const jsonResponse = results.map(mail => ({
                     subject: mail.subject,
                     sender: mail.sender,
                     received_at: formatDateSimple(mail.received_at),
-                    // 保留正文，并做简单处理
                     body: stripHtml(mail.body)
                 }));
                 return new Response(JSON.stringify(jsonResponse), { headers: corsHeaders() });
             }
 
-            // 【重点修改】使用加号拼接，防止符号错误
             const outputText = results.map(mail => {
-                // 格式：2025-12-14 21:11:35 | 正文内容
                 return formatDateSimple(mail.received_at) + " | " + stripHtml(mail.body);
-            }).join('\n'); // 多封邮件之间用换行分隔
+            }).join('\n');
 
             return new Response(outputText, { headers: { "Content-Type": "text/plain;charset=UTF-8" } });
         }
@@ -403,14 +442,18 @@ export default {
       return targetAccount;
   }
   
-  async function syncEmails(env, accountId, mode) {
-      const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(accountId).first();
-      if (!account) throw new Error("Account not found");
-  
-      let messages = [];
-  
-      const useGas = (mode === 'GAS') || (!mode && account.type === 'GAS');
-      const useApi = (mode === 'API') || (!mode && account.type === 'API');
+  // [修改] 修复拼写错误(async)，并优化 API/GAS 自动切换逻辑 (API优先)
+  async function syncEmails(env, accountId, mode, limit = 5) {
+    const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(accountId).first();
+    if (!account) throw new Error("Account not found");
+
+    let messages = [];
+
+    // [核心逻辑] 
+    // 1. 如果指定模式(API/GAS)，直接使用。
+    // 2. 如果未指定(Auto): 若账号类型包含 API 则优先用 API，否则用 GAS。
+    const useGas = (mode === 'GAS') || (!mode && account.type === 'GAS');
+    const useApi = (mode === 'API') || (!mode && account.type.includes('API'));
   
       if (useGas) {
           let scriptUrl = account.script_url ? account.script_url.trim() : '';
@@ -474,7 +517,7 @@ export default {
           const accessToken = await getAccessToken(authData);
   
           const q = encodeURIComponent("label:inbox OR label:spam");
-          const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q=${q}`, {
+          const listResp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&q=${q}`, {
               headers: { 'Authorization': `Bearer ${accessToken}` }
           });
           
@@ -500,7 +543,7 @@ export default {
                           sender: sender,
                           subject: subject,
                           body: detail.snippet || '(No Content)',
-                          date: Date.now()
+                          date: parseInt(detail.internalDate || Date.now())
                       });
                   }
               }
@@ -509,20 +552,13 @@ export default {
   
       if (messages.length === 0) return 0;
       
-      let syncCount = 0;
-      for (const msg of messages) {
-          const exists = await env.DB.prepare("SELECT id FROM received_emails WHERE id_str = ?").bind(msg.id_str).first();
-          if (exists) continue;
-  
-          await env.DB.prepare(`
-              INSERT INTO received_emails (account_id, sender, subject, body, received_at, id_str)
-              VALUES (?, ?, ?, ?, ?, ?)
-          `).bind(accountId, msg.sender, msg.subject, msg.body, msg.date, msg.id_str).run();
-          
-          syncCount++;
-      }
-  
-      return syncCount;
+      return messages.map(msg => ({
+        id_str: msg.id_str,
+        sender: msg.sender,
+        subject: msg.subject,
+        body: msg.body,
+        received_at: msg.date 
+    }));
   }
   
   // --- 路由处理 ---
@@ -952,37 +988,32 @@ export default {
      const method = req.method;
   
      if (method === 'POST') {
-         try {
-             const data = await req.json();
-             const accountId = data.account_id;
-             const mode = data.mode; 
-             if (!accountId) throw new Error("Missing account_id");
-             
-             const count = await syncEmails(env, accountId, mode);
-             return new Response(JSON.stringify({ ok: true, count: count }), { headers: corsHeaders() });
-         } catch (e) {
-             return new Response(JSON.stringify({ ok: false, error: e.message }), { headers: corsHeaders() });
-         }
-     }
-     
-     if (method === 'GET') {
-         let limit = parseInt(url.searchParams.get('limit'));
-         if (!limit || limit <= 0) limit = 20; 
-         
-         const accountId = url.searchParams.get('account_id');
+        return new Response(JSON.stringify({ ok: true, count: 0 }), { headers: corsHeaders() });
+    }
+    
+    // [修改] GET 请求变为“实时获取模式”
+    if (method === 'GET') {
+        let limit = parseInt(url.searchParams.get('limit'));
+        if (!limit || limit <= 0) limit = 20; 
+        
+        const accountId = url.searchParams.get('account_id');
+ 
+        // [修改] 获取 URL 中的 mode 参数
+        const mode = url.searchParams.get('mode');
   
-         if (accountId) {
-             const { results } = await env.DB.prepare(
-                 "SELECT * FROM received_emails WHERE account_id = ? ORDER BY received_at DESC LIMIT ?"
-             ).bind(accountId, limit).all();
-             return new Response(JSON.stringify(results), { headers: corsHeaders() });
-         } else {
-             const { results } = await env.DB.prepare(
-                 "SELECT * FROM received_emails ORDER BY received_at DESC LIMIT ?"
-             ).bind(limit).all();
-             return new Response(JSON.stringify(results), { headers: corsHeaders() });
-         }
-     }
+        if (accountId) {
+            try {
+                // [修改] 将获取到的 mode 传给 syncEmails
+                const results = await syncEmails(env, accountId, mode, limit);
+                return new Response(JSON.stringify(results), { headers: corsHeaders() });
+            } catch (e) {
+                return new Response(JSON.stringify({ error: e.message }), { headers: corsHeaders() });
+            }
+        } else {
+            // 如果没选账号，返回空数组
+            return new Response(JSON.stringify([]), { headers: corsHeaders() });
+        }
+    }
      
      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders() });
   }
