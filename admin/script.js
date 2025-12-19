@@ -1,4 +1,4 @@
-const API_BASE = "https://gm.xyrj.dpdns.org";
+const API_BASE = "";
 
 // ================== 全局变量定义 ==================
 
