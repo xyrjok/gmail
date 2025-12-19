@@ -11,22 +11,17 @@ CREATE TABLE IF NOT EXISTS access_rules (
     created_at      INTEGER DEFAULT (strftime('%s', 'now'))
 );
 
-CREATE TABLE IF NOT EXISTS account_auth (
-    account_id     INTEGER PRIMARY KEY,
-    client_id      TEXT,
-    client_secret  TEXT,
-    refresh_token  TEXT,
-    updated_at     INTEGER
-);
-
 CREATE TABLE IF NOT EXISTS accounts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    alias       TEXT,
-    type        TEXT CHECK (type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
-    script_url  TEXT,
-    config_json TEXT,
-    status      INTEGER DEFAULT 1
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    alias           TEXT,
+    type            TEXT CHECK(type IN ('GAS', 'API', 'API/GAS')) NOT NULL,
+    script_url      TEXT,
+    config_json     TEXT,
+    status          INTEGER DEFAULT 1,
+    client_id       TEXT,
+    client_secret   TEXT,
+    refresh_token   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS send_tasks (
