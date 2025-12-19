@@ -27,17 +27,6 @@ CREATE TABLE IF NOT EXISTS send_tasks (
     fail_count      INTEGER DEFAULT 0
 );
 
--- 3. 收件箱 (简单存储)
-CREATE TABLE IF NOT EXISTS received_emails (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id   INTEGER,
-    sender       TEXT,
-    recipient    TEXT,
-    subject      TEXT,
-    body         TEXT,
-    received_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    id_str       TEXT
-);
 
 -- 创建独立的认证信息表
 CREATE TABLE IF NOT EXISTS account_auth (
