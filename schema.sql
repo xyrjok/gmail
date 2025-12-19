@@ -1,4 +1,24 @@
--- 1. 账号表 (区分 GAS 和 API)
+CREATE TABLE IF NOT EXISTS access_rules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    alias           TEXT NOT NULL,
+    query_code      TEXT NOT NULL UNIQUE,
+    fetch_limit     TEXT DEFAULT '5',
+    valid_until     INTEGER,
+    match_sender    TEXT,
+    match_receiver  TEXT,
+    match_body      TEXT,
+    created_at      INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS account_auth (
+    account_id     INTEGER PRIMARY KEY,
+    client_id      TEXT,
+    client_secret  TEXT,
+    refresh_token  TEXT,
+    updated_at     INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
@@ -9,7 +29,6 @@ CREATE TABLE IF NOT EXISTS accounts (
     status      INTEGER DEFAULT 1
 );
 
--- 2. 邮件发送任务表 (核心循环逻辑)
 CREATE TABLE IF NOT EXISTS send_tasks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id      INTEGER,
@@ -25,27 +44,4 @@ CREATE TABLE IF NOT EXISTS send_tasks (
     subject         TEXT,
     success_count   INTEGER DEFAULT 0,
     fail_count      INTEGER DEFAULT 0
-);
-
-
--- 创建独立的认证信息表
-CREATE TABLE IF NOT EXISTS account_auth (
-    account_id     INTEGER PRIMARY KEY,
-    client_id      TEXT,
-    client_secret  TEXT,
-    refresh_token  TEXT,
-    updated_at     INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS access_rules (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    name            TEXT NOT NULL,
-    alias           TEXT NOT NULL,
-    query_code      TEXT NOT NULL UNIQUE,
-    fetch_limit     TEXT DEFAULT '5',
-    valid_until     INTEGER,
-    match_sender    TEXT,
-    match_receiver  TEXT,
-    match_body      TEXT,
-    created_at      INTEGER DEFAULT (strftime('%s', 'now'))
 );
