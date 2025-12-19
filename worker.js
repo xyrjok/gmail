@@ -54,14 +54,6 @@ export default {
             let qParts = [];
             if (rule.match_sender) qParts.push(`from:${rule.match_sender}`);
             if (rule.match_receiver) qParts.push(`to:${rule.match_receiver}`);
-            // --- [修改] 自动给每个关键词加上双引号，解决空格、冒号、特殊符号匹配失败的问题 ---
-            if (rule.match_body) {
-                // 例如输入: dasdasd”访|Reuyfdfer of cugft gfte: H
-                // 会被转换为: "dasdasd”访" OR "Reuyfdfer of cugft gfte: H"
-                const bodyQ = rule.match_body.split('|').map(k => `"${k.trim()}"`).join(' OR ');
-                qParts.push(`(${bodyQ})`);
-            }
-            // --- [修改结束] ---
             const qStr = qParts.join(' ') || "label:inbox OR label:spam";
             
             // --- [修改开始] 解析抓取数量 (支持 5-3 格式: 抓5显3) ---
@@ -110,6 +102,16 @@ export default {
                                             if (h.name === 'Subject') subject = h.value;
                                             if (h.name === 'From') sender = h.value;
                                         });
+                                        // [新增] 强制本地匹配：只要包含该连续字符串就匹配
+                                        if (rule.match_body) {
+                                            // 邮件正文摘要 (转小写)
+                                            const bodyLower = (detail.snippet || '').toLowerCase();
+                                            // 你的关键词 (转小写，去空格)
+                                            const keys = rule.match_body.split('|').map(k => k.trim().toLowerCase());
+                                            
+                                            // 核心逻辑：如果 bodyLower 不包含(includes) 任意一个 key，就跳过
+                                            if (!keys.some(k => bodyLower.includes(k))) return;
+                                        }
                                         results.push({
                                             subject: subject,
                                             sender: sender,
